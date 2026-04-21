@@ -27,9 +27,12 @@ def rating_label_color(label: str) -> str:
     }.get(label, "#374151")
 
 def calc_kpi_score(pct_value: float, weight: float) -> float:
-    """الدرجة الفعلية = (القيمة المئوية / 100) × الوزن"""
-    v = max(0.0, min(100.0, float(pct_value)))
-    return round((v / 100.0) * weight, 2)
+    """
+    الدرجة الفعلية = القيمة المدخلة مباشرة (من 0 إلى الوزن)
+    مثال: وزن 9.6 → المدخل من 0 إلى 9.6 → الدرجة = المدخل مباشرة
+    """
+    v = max(0.0, min(float(weight), float(pct_value)))
+    return round(v, 2)
 
 def kpi_score_to_pct(kpi_score: float, weight: float) -> float:
     """تحويل الدرجة المحفوظة إلى نسبة مئوية 0-100"""
