@@ -1,0 +1,19 @@
+{
+  "عاهد احمد خلليل": {
+    "name": "عاهد احمد خلليل",
+    "emp_id": "1",
+    "job_title": "سائق",
+    "job_grade": "عادي",
+    "dept": "الادارة",
+    "reviewer": "زياد معايعه",
+    "hire_date": "1/1/2025",
+    "job_change": "لا يوجد",
+    "prev_year": "2026",
+    "prev_year_score": "جيد جدا",
+    "status": "فعّال",
+    "reviewer_notes": "موظف ملتزم",
+    "training_needs": "دور تاهيل سائقين",
+    "violations_notes": "قطع اشارة حمراء",
+    "violations": {}
+  }
+}

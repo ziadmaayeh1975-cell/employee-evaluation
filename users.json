@@ -1,0 +1,38 @@
+{
+  "admin": {
+    "password": "f2b46d680eda8c7c5be09f4bb03ddd0ff76fdfde6588bde4dc4985909b0a7c1b",
+    "role": "super_admin",
+    "display": "المدير",
+    "reviewer": ""
+  },
+  "Naser": {
+    "password": "392adb89d19578e98aff717f90159d84a39ce6f2d4d53b76dfbf3fc174c46969",
+    "role": "admin",
+    "display": "Naser",
+    "reviewer": "ناصر فنون"
+  },
+  "jamal": {
+    "password": "b16b5ae529dceb12222f1fb7cc9ce4e945851eb1f51942c28feeb4efe547f1f9",
+    "role": "user",
+    "display": "jamal",
+    "reviewer": "جمال فنون"
+  },
+  "tamer": {
+    "display": "تامر فنون",
+    "role": "user",
+    "reviewer": "تامر فنون",
+    "password": "4a9ba52b141aa23c9dc576f48ec594e30453c735a75fd3232c7da6dfc69264af"
+  },
+  "laith": {
+    "display": "ليث الفواعير",
+    "role": "user",
+    "reviewer": "ليث الفواعير",
+    "password": "6bae15914f494dafd8929e6071a9bcce6be22071cf64c7afef69b0c53edf12c7"
+  },
+  "saif": {
+    "display": "saif",
+    "role": "user",
+    "reviewer": "سيف بدر",
+    "password": "f0f1d967eaeddd61388197fc49a8bb256ce12d837d8a2d9d47df2f223246c1a6"
+  }
+}
