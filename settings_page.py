@@ -2,7 +2,7 @@ import os
 from datetime import datetime, date
 import streamlit as st
 from constants import LOGO_PATH
-from auth import (hash_pw, load_users, save_users,
+from auth import (hash_pw, load_users, save_users, add_user, update_user, delete_user,
                   load_trial_users, save_trial_users,
                   load_app_settings, save_app_settings)
 try:
