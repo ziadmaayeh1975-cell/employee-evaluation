@@ -183,8 +183,9 @@ def render_entry(df_emp, df_kpi, df_data):
                 </span>
             </div>""", unsafe_allow_html=True)
         with col_inp:
-            val = st.number_input("", min_value=0, max_value=int(weight),
-                value=0, step=1, key=f"kpi_{kname}", label_visibility="collapsed")
+            val = st.number_input("", min_value=0.0, max_value=float(weight),
+                value=0.0, step=0.1, key=f"kpi_{kname}", label_visibility="collapsed",
+                format="%.1f")
             job_grades[kname] = (weight, val)
         with col_info:
             score = calc_kpi_score(val, weight)
@@ -224,8 +225,9 @@ def render_entry(df_emp, df_kpi, df_data):
                 </span>
             </div>""", unsafe_allow_html=True)
         with col_inp2:
-            val2 = st.number_input("", min_value=0, max_value=int(weight),
-                value=0, step=1, key=f"pers_{kname}", label_visibility="collapsed")
+            val2 = st.number_input("", min_value=0.0, max_value=float(weight),
+                value=0.0, step=0.1, key=f"pers_{kname}", label_visibility="collapsed",
+                format="%.1f")
             pers_grades[kname] = (weight, val2)
         with col_info2:
             lbl2 = rating_label(val2 / weight * 100 if weight else 0)
