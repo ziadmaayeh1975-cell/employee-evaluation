@@ -492,16 +492,24 @@ def render_settings(df_emp, df_kpi, df_data):
     # تاب 4 و 5 و 6
     # ══════════════════════════════════════════════════════════════════
     with set_tab4:
-        if _EMP_KPI_OK:
-            render_employees_panel()
-        else:
-            render_employee_management(df_emp, df_data, df_kpi, load_app_settings(), LOGO_PATH)
+        try:
+            if _EMP_KPI_OK:
+                render_employees_panel()
+            else:
+                render_employee_management(df_emp, df_data, df_kpi, load_app_settings(), LOGO_PATH)
+        except Exception as _e4:
+            st.warning(f"⚠️ تعذّر تحميل إدارة الموظفين: {_e4}")
+            st.info("💡 استورد البيانات من تبويب 'قاعدة البيانات' أولاً.")
 
     with set_tab_kpi:
-        if _EMP_KPI_OK:
-            render_kpis_panel()
-        else:
-            st.info("employees_kpis_panel.py غير موجود")
+        try:
+            if _EMP_KPI_OK:
+                render_kpis_panel()
+            else:
+                st.info("employees_kpis_panel.py غير موجود")
+        except Exception as _ek:
+            st.warning(f"⚠️ تعذّر تحميل مؤشرات الأداء: {_ek}")
+            st.info("💡 استورد البيانات من تبويب 'قاعدة البيانات' أولاً.")
 
     with set_tab5:
         render_cv_reports(df_emp, df_data, df_kpi, load_app_settings(), LOGO_PATH)
