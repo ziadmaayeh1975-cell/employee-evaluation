@@ -1,140 +1,117 @@
-# employee_report.py — تقرير الموظف مع عمود G للإجراءات التأديبية
-import streamlit as st
+"""
+database_manager.py — قاعدة البيانات المحلية بديل Excel
+مع إضافة: الإجراءات التأديبية + معلومات الموظف الإضافية + التقييم السابق
+"""
+import json, os
 import pandas as pd
-from datetime import date
-from database_manager import get_disciplinary_for_month
+import streamlit as st
+from datetime import date, datetime
+from constants import MONTH_MAP, PERSONAL_KPIS, PERSONAL_WEIGHT, MONTHS_AR, MONTHS_EN
 
-try:
-    from calculations import verbal_grade
-except ImportError:
-    def verbal_grade(score):
-        if score >= 90: return "ممتاز"
-        if score >= 80: return "جيد جداً"
-        if score >= 70: return "جيد"
-        if score >= 60: return "مقبول"
-        return "ضعيف"
+DB_DIR  = "db"
+EMP_DB  = os.path.join(DB_DIR, "employees.json")
+KPI_DB  = os.path.join(DB_DIR, "kpis.json")
+DATA_DB = os.path.join(DB_DIR, "evaluations.json")
+META_FILE = os.path.join(DB_DIR, "db_meta.json")
+DISCIPLINARY_DB = os.path.join(DB_DIR, "disciplinary.json")
+EMP_EXTRA_DB = os.path.join(DB_DIR, "employees_extra.json")
 
-
-def render_employee_report(df_emp, df_kpi, df_data):
-    st.subheader("📊 تقارير الموظفين الفردية")
-    
-    if df_emp is None or df_emp.empty:
-        st.warning("⚠️ لا توجد بيانات موظفين.")
-        return
-    
-    # فلترة حسب المقيم (للأدمن العادي)
-    role = st.session_state.get("role", "user")
-    reviewer_col = df_emp.columns[3] if len(df_emp.columns) > 3 else df_emp.columns[-1]
-    
-    if role != "super_admin":
-        current_reviewer = st.session_state.get("reviewer", "")
-        if current_reviewer:
-            df_emp = df_emp[df_emp[reviewer_col].astype(str).str.strip() == current_reviewer]
-    
-    sel_emp = st.selectbox("👤 اختر الموظف", 
-                           sorted([str(e).strip() for e in df_emp["EmployeeName"].dropna() 
-                                   if str(e).strip() not in ("","nan")]))
-    
-    if not sel_emp:
-        return
-    
-    sel_year = st.selectbox("📅 السنة", [2025, 2026, 2027], index=0)
-    
-    if st.button("📊 عرض التقرير", type="primary", use_container_width=True):
-        show_employee_report_detail(sel_emp, sel_year, df_emp, df_kpi, df_data)
+os.makedirs(DB_DIR, exist_ok=True)
 
 
-def show_employee_report_detail(emp_name, year, df_emp, df_kpi, df_data):
-    # معلومات الموظف
-    emp_row = df_emp[df_emp["EmployeeName"] == emp_name]
-    if emp_row.empty:
-        st.error("لم يتم العثور على بيانات الموظف.")
-        return
-    
-    emp_row = emp_row.iloc[0]
-    job_title = str(emp_row.iloc[1]).strip() if len(emp_row) > 1 else "---"
-    dept = str(emp_row.iloc[2]).strip() if len(emp_row) > 2 else "---"
-    mgr = str(emp_row.iloc[3]).strip() if len(emp_row) > 3 else "---"
-    
-    # عرض معلومات الموظف
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("👤 الموظف", emp_name)
-    col2.metric("💼 الوظيفة", job_title)
-    col3.metric("🏭 القسم", dept)
-    col4.metric("👨‍💼 المدير", mgr)
-    
-    st.markdown("---")
-    
-    # جدول التقييمات الشهرية (مع عمود G للإجراءات)
-    st.markdown("### 📈 ملخص التقييمات الشهرية")
-    
-    # جلب البيانات لهذا الموظف والسنة
-    emp_data = None
-    if df_data is not None and not df_data.empty:
-        emp_data = df_data[
-            (df_data["EmployeeName"] == emp_name) &
-            (df_data["Year"] == int(year))
-        ]
-    
-    MONTHS_AR = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
-                 "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"]
-    
-    # 🆕 إنشاء DataFrame للعرض مع عمود G (الإجراءات التأديبية)
-    report_data = []
-    scores = []
-    
-    for idx, month_en in enumerate(["January", "February", "March", "April", "May", "June",
-                                     "July", "August", "September", "October", "November", "December"]):
-        month_ar = MONTHS_AR[idx]
-        
-        if emp_data is not None and not emp_data.empty:
-            m_rows = emp_data[emp_data["Month"] == month_en]
-        else:
-            m_rows = pd.DataFrame()
-        
-        if not m_rows.empty:
-            score = round(float(m_rows["KPI_%"].sum()), 1)
-            scores.append(score)
-            verbal = verbal_grade(score)
-        else:
-            score = 0.0
-            verbal = "---"
-        
-        # 🆕 جلب الإجراءات التأديبية لهذا الشهر (عمود G)
-        disc_info = get_disciplinary_for_month(emp_name, year, month_ar)
-        
-        report_data.append({
-            "الشهر": month_ar,
-            "الدرجة": score,
-            "التقييم": verbal,
-            "عدد المؤشرات": len(m_rows) if not m_rows.empty else 0,
-            "الإجراءات التأديبية": disc_info  # ✅ العمود G
-        })
-    
-    # عرض الجدول
-    df_report = pd.DataFrame(report_data)
-    
-    # تنسيق الجدول
-    st.dataframe(
-        df_report.style.format({
-            "الدرجة": "{:.1f}",
-            "عدد المؤشرات": "{:.0f}"
-        }).background_gradient(subset=["الدرجة"], cmap="RdYlGn"),
-        use_container_width=True,
-        hide_index=True
-    )
-    
-    # المتوسط السنوي
-    avg_score = round(sum(scores) / max(len(scores), 1), 1)
-    avg_verbal = verbal_grade(avg_score)
-    
-    st.markdown("#### 📊 المتوسط السنوي")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("🎯 متوسط الدرجة", f"{avg_score}%")
-    col2.metric("📝 التقييم اللفظي", avg_verbal)
-    col3.metric("📅 عدد الأشهر المكتملة", f"{len(scores)}/12")
+def db_exists():
+    return all(os.path.exists(p) for p in [EMP_DB, KPI_DB, DATA_DB])
 
 
-def download_report_pdf(emp_name, year, df_emp, df_kpi, df_data):
-    # سيتم تطوير هذا لاحقاً
-    st.info("📥 ميزة PDF قيد التطوير...")
+def get_db_meta():
+    if os.path.exists(META_FILE):
+        with open(META_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+@st.cache_data(ttl=30)
+def load_data_from_db():
+    try:
+        with open(EMP_DB,  "r", encoding="utf-8") as f: emp_records  = json.load(f)
+        with open(KPI_DB,  "r", encoding="utf-8") as f: kpi_records  = json.load(f)
+        with open(DATA_DB, "r", encoding="utf-8") as f: data_records = json.load(f)
+
+        df_emp  = pd.DataFrame(emp_records)
+        df_kpi  = pd.DataFrame(kpi_records)
+        df_data = pd.DataFrame(data_records)
+
+        for df in [df_emp, df_kpi, df_data]:
+            df.columns = [str(c).strip() for c in df.columns]
+            for col in df.columns:
+                if str(df[col].dtype) in ('object', 'str', 'string'):
+                    df[col] = df[col].astype(str).str.strip()
+
+        df_kpi["Weight"] = pd.to_numeric(df_kpi["Weight"], errors="coerce").fillna(0)
+        for col in ["KPI_%", "Weight"]:
+            if col in df_data.columns:
+                df_data[col] = pd.to_numeric(df_data[col], errors="coerce").fillna(0)
+        if "Year" in df_data.columns:
+            df_data["Year"] = pd.to_numeric(df_data["Year"], errors="coerce").fillna(2025).astype(int)
+
+        if "اسم المقيم " not in df_emp.columns and "اسم المقيم" in df_emp.columns:
+            df_emp.rename(columns={"اسم المقيم": "اسم المقيم "}, inplace=True)
+
+        return df_emp, df_kpi, df_data
+
+    except FileNotFoundError:
+        return None, None, None
+    except Exception as e:
+        st.error(f"❌ خطأ في تحميل قاعدة البيانات: {e}")
+        return None, None, None
+
+
+def load_employees_db():
+    """تحميل قائمة الموظفين من قاعدة البيانات"""
+    if os.path.exists(EMP_DB):
+        with open(EMP_DB, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+
+def save_evaluation_to_db(emp_name, month_ar, year, manager, dept, kpi_rows, notes="", training=""):
+    try:
+        with open(DATA_DB, "r", encoding="utf-8") as f:
+            records = json.load(f)
+        month_en = MONTH_MAP.get(month_ar, month_ar)
+        eval_date = date.today().strftime("%d/%m/%Y")
+        for item in kpi_rows:
+            if len(item) == 4:
+                kpi_name, weight, grade, rating_lbl = item
+            else:
+                kpi_name, weight, grade = item[:3]
+                rating_lbl = ""
+            records.append({
+                "EmployeeName": emp_name,
+                "Month": month_en,
+                "KPI_Name": kpi_name,
+                "Weight": float(weight),
+                "KPI_%": round(float(grade), 2),
+                "RatingLabel": rating_lbl,
+                "Evaluator": manager,
+                "Nots": notes,
+                "Year": int(year),
+                "EvalDate": eval_date,
+                "Training": training,
+            })
+        with open(DATA_DB, "w", encoding="utf-8") as f:
+            json.dump(records, f, ensure_ascii=False, indent=2)
+        load_data_from_db.clear()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+# ════════════════════════════════════════════════════════════════
+# ✅ إجراءات تأديبية
+# ════════════════════════════════════════════════════════════════
+def load_disciplinary_actions():
+    """تحميل جميع الإجراءات التأديبية"""
+    if os.path.exists(DISCIPLINARY_DB):
+        with open(DISCIPLINARY_DB, "r", encoding="utf-8") as f:
+            return 
