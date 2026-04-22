@@ -1,24 +1,17 @@
 """
 employees_module.py — إدارة ملفات الموظفين + PDF عربي عبر wkhtmltopdf
-مع إضافة: العمود الجديد للإجراءات التأديبية في التقارير
 """
 import streamlit as st
 import pandas as pd
 import json, io, os, subprocess, tempfile, base64
 from datetime import date
 
-try:
-    from database_manager import get_disciplinary_for_month
-    _DISCIPLINARY_OK = True
-except ImportError:
-    _DISCIPLINARY_OK = False
-    def get_disciplinary_for_month(emp_name, year, month_ar):
-        return "-"
-
 EMP_FILE = "emp_profiles.json"
 _BASE = os.path.dirname(os.path.abspath(__file__))
 
-
+# ─────────────────────────────
+# Fonts
+# ─────────────────────────────
 def _load_font_b64(fn):
     p = os.path.join(_BASE, fn)
     if os.path.exists(p):
@@ -30,6 +23,9 @@ _FONT_B64      = _load_font_b64("Amiri-Regular.ttf") or _load_font_b64("DejaVuSa
 _FONT_BOLD_B64 = _load_font_b64("Amiri-Bold.ttf")    or _load_font_b64("DejaVuSans-Bold.ttf")
 
 
+# ─────────────────────────────
+# WKHTMLTOPDF
+# ─────────────────────────────
 def _find_wk():
     for c in ["wkhtmltopdf",
               r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe",
@@ -45,6 +41,9 @@ def _find_wk():
 _WK = _find_wk()
 
 
+# ─────────────────────────────
+# DATA IO
+# ─────────────────────────────
 def load_profiles():
     if os.path.exists(EMP_FILE):
         with open(EMP_FILE,"r",encoding="utf-8") as f:
@@ -56,6 +55,9 @@ def save_profiles(p):
         json.dump(p,f,ensure_ascii=False,indent=2)
 
 
+# ─────────────────────────────
+# Helpers
+# ─────────────────────────────
 def verbal(pct):
     try:
         p=float(pct)
@@ -75,6 +77,9 @@ def safe_sheet_name(name):
     return "".join(c for c in str(name) if c not in r'[]:*?/\\').strip()[:28]
 
 
+# ─────────────────────────────
+# CSS PDF
+# ─────────────────────────────
 _CSS = f"""
 @font-face{{font-family:'AF';font-weight:400;src:url('data:font/truetype;base64,{_FONT_B64}') format('truetype');}}
 @font-face{{font-family:'AF';font-weight:700;src:url('data:font/truetype;base64,{_FONT_BOLD_B64}') format('truetype');}}
@@ -83,6 +88,9 @@ body{{font-size:12px;color:#1a1a1a;padding:10mm 15mm;line-height:1.6;}}
 """
 
 
+# ─────────────────────────────
+# BODY HTML (PDF)
+# ─────────────────────────────
 def _body(profile, df_data):
     nm=profile.get("name","")
     eid=profile.get("emp_id","---")
@@ -108,6 +116,9 @@ def _html(profile, df_data, app_cfg, logo_path):
 """
 
 
+# ─────────────────────────────
+# PDF GENERATOR
+# ─────────────────────────────
 def _to_pdf(html):
     if not _WK:
         return None,"wkhtmltopdf غير مثبت"
@@ -132,11 +143,17 @@ def _to_pdf(html):
         return None,r.stderr.decode(errors="ignore")[:200]
 
 
+# ─────────────────────────────
+# BUILD PDF
+# ─────────────────────────────
 def build_cv_pdf(eid,profile,df_data,df_kpi,app_cfg,logo_path):
     pdf,err=_to_pdf(_html(profile,df_data,app_cfg,logo_path))
     return io.BytesIO(pdf) if pdf else (None,err)
 
 
+# ─────────────────────────────
+# EMPLOYEES LIST RENDER
+# ─────────────────────────────
 def render_employee_management(df_emp,df_data,df_kpi,app_cfg,logo_path):
     profiles=load_profiles()
 
@@ -155,6 +172,9 @@ def render_employee_management(df_emp,df_data,df_kpi,app_cfg,logo_path):
         st.write(name)
 
 
+# ─────────────────────────────
+# EXCEL REPORT (FIXED ONLY)
+# ─────────────────────────────
 def _build_cv_sheet(wb, name, df_emp, df_data, df_kpi, profiles, inc_monthly, year, app_cfg=None):
     """يبني شيت CV كامل للموظف."""
     if app_cfg is None: app_cfg = {}
@@ -198,8 +218,7 @@ def _build_cv_sheet(wb, name, df_emp, df_data, df_kpi, profiles, inc_monthly, ye
         sc(ws.cell(r1,c1,val), **kw)
 
     # ── عرض الأعمدة ─────────────────────────────────────────────────
-    # 🆕 تمت إضافة عمود إضافي للإجراءات التأديبية
-    for col,w in [("A",28),("B",18),("C",14),("D",14),("E",18),("F",14)]:
+    for col,w in [("A",28),("B",18),("C",14),("D",14),("E",14),("F",14)]:
         ws.column_dimensions[col].width = w
 
     # ── بيانات الموظف من df_emp ──────────────────────────────────────
@@ -266,9 +285,9 @@ def _build_cv_sheet(wb, name, df_emp, df_data, df_kpi, profiles, inc_monthly, ye
        bold=True, sz=11, color=WHITE, bg=ORANGE, ah="right", brd="outer")
     r += 1
 
-    # رأس جدول الأشهر — 🆕 تم إضافة العمود الخامس للإجراءات التأديبية
+    # رأس جدول الأشهر
     ws.row_dimensions[r].height = 16
-    for ci, hdr in enumerate(["الشهر","الدرجة الكلية","التقييم","عدد المؤشرات","الإجراءات التأديبية",""],1):
+    for ci, hdr in enumerate(["الشهر","الدرجة الكلية","التقييم","عدد المؤشرات","",""],1):
         sc(ws.cell(r,ci,hdr), bold=True, sz=9, color=WHITE,
            bg=DARK, ah="center", brd="inner")
     r += 1
@@ -292,17 +311,10 @@ def _build_cv_sheet(wb, name, df_emp, df_data, df_kpi, profiles, inc_monthly, ye
         else:
             score, verb, n_kpi, clr = "—", "—", "—", rbg
 
-        # 🆕 جلب الإجراءات التأديبية للشهر
-        disc_info = "-"
-        if _DISCIPLINARY_OK and df_data is not None and not df_data.empty:
-            disc_info = get_disciplinary_for_month(name, year, mar)
-        
         sc(ws.cell(r,1,mar),          bold=True, sz=9, bg=rbg,   ah="center", brd="inner")
         sc(ws.cell(r,2,score),        bold=True, sz=9, bg=clr,   ah="center", brd="inner")
         sc(ws.cell(r,3,verb),         bold=True, sz=9, bg=clr,   ah="center", brd="inner")
         sc(ws.cell(r,4,n_kpi),        bold=False,sz=9, bg=rbg,   ah="center", brd="inner")
-        # 🆕 عرض الإجراءات التأديبية
-        sc(ws.cell(r,5,disc_info),    bold=False,sz=8, bg=rbg,   ah="left", wrap=True, brd="inner")
         r += 1
 
     # متوسط سنوي
