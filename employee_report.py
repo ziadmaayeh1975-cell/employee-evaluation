@@ -1,4 +1,4 @@
-# employee_report.py — تقرير الموظف (نسخة خالية من الأخطاء)
+# employee_report.py — تقرير الموظف (نسخة بسيطة وآمنة)
 import streamlit as st
 import pandas as pd
 from datetime import date
@@ -45,7 +45,6 @@ def show_employee_report_detail(emp_name, year, df_emp, df_kpi, df_data):
     dept = str(emp_row.iloc[2]).strip() if len(emp_row) > 2 else "---"
     mgr = str(emp_row.iloc[3]).strip() if len(emp_row) > 3 else "---"
     
-    # عرض معلومات الموظف
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("👤 الموظف", emp_name)
     col2.metric("💼 الوظيفة", job_title)
@@ -91,24 +90,22 @@ def show_employee_report_detail(emp_name, year, df_emp, df_kpi, df_data):
             score = 0.0
             verbal = "---"
         
-        # 🆕 عمود G: الإجراءات التأديبية (نعرض "-" فقط مؤقتاً حتى نصلح Database)
-        disc_info = "-"
-        
         report_data.append({
             "الشهر": month_ar,
             "الدرجة": score,
             "التقييم": verbal,
             "عدد المؤشرات": len(m_rows) if not m_rows.empty else 0,
-            "الإجراءات التأديبية": disc_info
+            "الإجراءات التأديبية": "-"
         })
     
     df_report = pd.DataFrame(report_data)
     
+    # عرض الجدول بدون background_gradient لتجنب الخطأ
     st.dataframe(
         df_report.style.format({
             "الدرجة": "{:.1f}",
             "عدد المؤشرات": "{:.0f}"
-        }).background_gradient(subset=["الدرجة"], cmap="RdYlGn"),
+        }),
         use_container_width=True,
         hide_index=True
     )
@@ -121,3 +118,7 @@ def show_employee_report_detail(emp_name, year, df_emp, df_kpi, df_data):
     col1.metric("🎯 متوسط الدرجة", f"{avg_score}%")
     col2.metric("📝 التقييم اللفظي", avg_verbal)
     col3.metric("📅 عدد الأشهر المكتملة", f"{len(scores)}/12")
+
+
+def download_report_pdf(emp_name, year, df_emp, df_kpi, df_data):
+    st.info("📥 ميزة PDF قيد التطوير...")
