@@ -1,12 +1,10 @@
-# settings_page.py
 import os
 from datetime import datetime, date
 import streamlit as st
-from constants import LOGO_PATH, MONTHS_AR
-from auth import (hash_pw, load_users, save_users, add_user, update_user, delete_user,
+from constants import LOGO_PATH
+from auth import (hash_pw, load_users, save_users,
                   load_trial_users, save_trial_users,
                   load_app_settings, save_app_settings)
-
 try:
     from employees_kpis_panel import render_employees_panel, render_kpis_panel
     _EMP_KPI_OK = True
@@ -29,34 +27,14 @@ except ImportError:
     def load_profiles():
         return []
 
-# ═══════════════════════════════════════════════════════════════════
-# استيراد دوال الإجراءات التأديبية
-# ═══════════════════════════════════════════════════════════════════
-try:
-    from database_manager import (
-        load_disciplinary_actions,
-        save_disciplinary_action,
-        delete_disciplinary_action,
-        load_employees_db
-    )
-    _DISCIPLINARY_OK = True
-except ImportError:
-    _DISCIPLINARY_OK = False
-    def load_disciplinary_actions():
-        return []
-    def save_disciplinary_action(action):
-        return False, "الدالة غير متوفرة"
-    def delete_disciplinary_action(action_id):
-        return False, "الدالة غير متوفرة"
-    def load_employees_db():
-        return []
-
 
 # ── دوال مساعدة للأدوار ──────────────────────────────────────────────
 def _is_super_admin():
+    """الأدمن الرئيسي: role == 'super_admin'"""
     return st.session_state.get("role") == "super_admin"
 
 def _is_admin():
+    """أدمن عادي أو رئيسي"""
     return st.session_state.get("role") in ("admin", "super_admin")
 
 def _role_label(role):
@@ -70,130 +48,6 @@ def _role_color(role):
             "user":        "#166534"}.get(role, "#166534")
 
 
-# ═══════════════════════════════════════════════════════════════════
-# 🆕 تبويب الإجراءات التأديبية (المتحد مع قائمة الموظفين)
-# ═══════════════════════════════════════════════════════════════════
-def _render_disciplinary_tab(df_emp):
-    """تبويب إدارة الإجراءات التأديبية — موحد مع قائمة الموظفين"""
-    st.markdown("### ⚠️ إدارة الإجراءات التأديبية")
-    
-    if not _DISCIPLINARY_OK:
-        st.error("❌ دوال الإجراءات التأديبية غير متوفرة.")
-        return
-
-    # سحب أسماء الموظفين من df_emp (نفس مصدر إدارة الموظفين)
-    emp_list = []
-    if df_emp is not None and not df_emp.empty and "EmployeeName" in df_emp.columns:
-        emp_list = sorted([
-            str(e).strip() for e in df_emp["EmployeeName"].dropna().tolist()
-            if str(e).strip() not in ("", "nan", "None")
-        ])
-    
-    # احتياطي من قاعدة البيانات
-    if not emp_list:
-        try:
-            employees_db = load_employees_db()
-            emp_list = sorted([e.get("EmployeeName", "") for e in employees_db 
-                               if e.get("EmployeeName")])
-        except:
-            pass
-
-    if not emp_list:
-        st.warning("⚠️ لا يوجد موظفون. أضف موظفين من تبويب 'إدارة الموظفين' أولاً.")
-        return
-
-    st.info(f"عدد الموظفين المتاحين: **{len(emp_list)}**")
-
-    # إضافة إجراء تأديبي جديد
-    if _is_super_admin():
-        st.markdown("#### ➕ إضافة إجراء تأديبي جديد")
-        with st.form("add_disciplinary_form", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                sel_emp = st.selectbox("👤 اسم الموظف", ["-- اختر الموظف --"] + emp_list, key="disc_emp")
-                action_type = st.selectbox("📋 نوع الإجراء", [
-                    "إنذار شفهي", "إنذار كتابي أول", "إنذار كتابي ثاني", 
-                    "إنذار كتابي نهائي", "خصم من الراتب", "إيقاف عن العمل", 
-                    "تخفيض الدرجة", "إنهاء الخدمات", "أخرى"
-                ], key="disc_type")
-            with col2:
-                action_date = st.date_input("📅 تاريخ الإجراء", value=date.today(), key="disc_date")
-                action_month = st.selectbox("🗓️ الشهر", MONTHS_AR, index=date.today().month-1, key="disc_month")
-            
-            action_year = st.selectbox("📆 السنة", [2024, 2025, 2026, 2027], index=1, key="disc_year")
-            description = st.text_area("📝 وصف الإجراء / السبب", 
-                                       placeholder="اكتب تفاصيل الإجراء...", 
-                                       height=100, key="disc_desc")
-
-            if st.form_submit_button("💾 حفظ الإجراء", type="primary", use_container_width=True):
-                if sel_emp == "-- اختر الموظف --":
-                    st.error("⚠️ اختر الموظف أولاً.")
-                elif not description.strip():
-                    st.error("⚠️ أدخل وصف الإجراء.")
-                else:
-                    new_action = {
-                        "id": datetime.now().strftime("%Y%m%d%H%M%S%f"),
-                        "employee_name": sel_emp,
-                        "action_type": action_type,
-                        "action_date": action_date.strftime("%Y-%m-%d"),
-                        "month": action_month,
-                        "year": int(action_year),
-                        "description": description.strip(),
-                        "created_by": st.session_state.get("username", ""),
-                        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M")
-                    }
-                    ok, err = save_disciplinary_action(new_action)
-                    if ok:
-                        st.success(f"✅ تم حفظ الإجراء لـ {sel_emp}")
-                        st.rerun()
-                    else:
-                        st.error(f"❌ فشل الحفظ: {err}")
-
-    # عرض الإجراءات المسجلة
-    st.markdown("---")
-    st.markdown("#### 📋 سجل الإجراءات التأديبية")
-
-    all_actions = load_disciplinary_actions()
-    
-    if not all_actions:
-        st.info("📭 لا توجد إجراءات تأديبية مسجلة حتى الآن.")
-        return
-
-    # فلترة
-    filter_col1, filter_col2, filter_col3 = st.columns(3)
-    with filter_col1:
-        filter_emp = st.selectbox("🔍 الموظف", ["الكل"] + emp_list, key="filter_disc_emp")
-    with filter_col2:
-        filter_year = st.selectbox("🔍 السنة", ["الكل", 2024, 2025, 2026, 2027], key="filter_disc_year")
-    with filter_col3:
-        filter_type = st.selectbox("🔍 نوع الإجراء", 
-            ["الكل", "إنذار شفهي", "إنذار كتابي أول", "إنذار كتابي ثاني", 
-             "إنذار كتابي نهائي", "خصم من الراتب", "إيقاف عن العمل", 
-             "تخفيض الدرجة", "إنهاء الخدمات", "أخرى"], 
-            key="filter_disc_type")
-
-    filtered = all_actions.copy()
-    if filter_emp != "الكل":
-        filtered = [a for a in filtered if a.get("employee_name") == filter_emp]
-    if filter_year != "الكل":
-        filtered = [a for a in filtered if str(a.get("year")) == str(filter_year)]
-    if filter_type != "الكل":
-        filtered = [a for a in filtered if a.get("action_type") == filter_type]
-
-    if not filtered:
-        st.info("📭 لا توجد إجراءات مطابقة للفلتر.")
-    else:
-        for action in sorted(filtered, key=lambda x: x.get("action_date", ""), reverse=True):
-            st.markdown(f"""
-            <div style="background:#FEF2F2;padding:12px;border-radius:10px;border-right:5px solid #EF4444;margin:8px 0;">
-                <b>{action.get('employee_name')}</b> — 
-                <span style="color:#B91C1C;font-weight:bold;">{action.get('action_type')}</span><br>
-                <small>📅 {action.get('action_date')} | {action.get('month')} {action.get('year')}</small><br>
-                <small>{action.get('description')}</small>
-            </div>
-            """, unsafe_allow_html=True)
-
-
 def render_settings(df_emp, df_kpi, df_data):
     # ── تحقق الصلاحية: admin عادي أو رئيسي ─────────────────────────
     if not _is_admin():
@@ -204,32 +58,27 @@ def render_settings(df_emp, df_kpi, df_data):
     TRIAL_DATA = load_trial_users()
     APP_CFG    = load_app_settings()
 
-    # ═══════════════════════════════════════════════════════════════════
-    # 🆕 إضافة تبويب الإجراءات التأديبية
-    # ═══════════════════════════════════════════════════════════════════
     _tabs = ["👥 إدارة المستخدمين", "⏳ المستخدمون التجريبيون",
-             "🏢 إعدادات الشركة", "⚠️ الإجراءات التأديبية",
-             "👨‍💼 إدارة الموظفين", "📊 قائمة مؤشرات الأداء",
-             "📋 ملفات الموظفين (CV)"]
+             "🏢 إعدادات الشركة", "👨‍💼 إدارة الموظفين",
+             "📊 قائمة مؤشرات الأداء", "📋 ملفات الموظفين (CV)"]
     if _DB_PANEL_OK:
         _tabs.append("🗄️ قاعدة البيانات")
-    
-    _tab_objs       = st.tabs(_tabs)
-    set_tab1        = _tab_objs[0]
-    set_tab2        = _tab_objs[1]
-    set_tab3        = _tab_objs[2]
-    set_tab_disc    = _tab_objs[3]
-    set_tab4        = _tab_objs[4]
-    set_tab_kpi     = _tab_objs[5]
-    set_tab5        = _tab_objs[6]
-    set_tab6        = _tab_objs[7] if _DB_PANEL_OK else None
+    _tab_objs   = st.tabs(_tabs)
+    set_tab1    = _tab_objs[0]
+    set_tab2    = _tab_objs[1]
+    set_tab3    = _tab_objs[2]
+    set_tab4    = _tab_objs[3]
+    set_tab_kpi = _tab_objs[4]
+    set_tab5    = _tab_objs[5]
+    set_tab6    = _tab_objs[6] if _DB_PANEL_OK else None
 
-    # ═══════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════
     # تاب 1 — إدارة المستخدمين
-    # ═══════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════
     with set_tab1:
         st.markdown("### 👥 المستخدمون الفعّالون")
 
+        # ── إشعار للأدمن العادي ─────────────────────────────────────
         if not _is_super_admin():
             st.info("👁️ أنت تعرض قائمة المستخدمين فقط — صلاحية التعديل والحذف للأدمن الرئيسي.")
 
@@ -238,6 +87,7 @@ def render_settings(df_emp, df_kpi, df_data):
         if "settings_target" not in st.session_state:
             st.session_state.settings_target = None
 
+        # ── رأس الجدول ───────────────────────────────────────────────
         h1, h2, h3, h4, h5, _ = st.columns([3, 3, 2, 1.2, 1.2, 0.1])
         for col, label in zip([h1, h2, h3, h4, h5],
                                ["الاسم الظاهر", "اسم الدخول", "الدور", "تعديل", "حذف"]):
@@ -268,6 +118,7 @@ def render_settings(df_emp, df_kpi, df_data):
                 f"font-size:13px;text-align:center;color:{role_clr};font-weight:bold;"
                 f"border:1px solid #E2E8F0;'>{role_lbl}</div>", unsafe_allow_html=True)
 
+            # ── أزرار التعديل والحذف — للأدمن الرئيسي فقط ──────────
             with c4:
                 if _is_super_admin():
                     if st.button("✏️", key=f"edit_btn_{uname}",
@@ -281,6 +132,7 @@ def render_settings(df_emp, df_kpi, df_data):
                                 unsafe_allow_html=True)
 
             with c5:
+                # لا يمكن حذف المستخدم admin الأساسي، وفقط super_admin يحذف
                 if _is_super_admin() and uname != "admin":
                     if st.button("🗑️", key=f"del_btn_{uname}",
                                  use_container_width=True, help="حذف المستخدم"):
@@ -296,6 +148,7 @@ def render_settings(df_emp, df_kpi, df_data):
         action = st.session_state.settings_action
         target = st.session_state.settings_target
 
+        # ── تأكيد الحذف ─────────────────────────────────────────────
         if action == "delete" and target and _is_super_admin():
             st.error(f"⚠️ هل تريد حذف المستخدم **{target}** "
                      f"({USERS[target].get('display', '')})?")
@@ -314,6 +167,7 @@ def render_settings(df_emp, df_kpi, df_data):
                     st.session_state.settings_target = None
                     st.rerun()
 
+        # ── تعديل المستخدم ───────────────────────────────────────────
         elif action == "edit" and target and _is_super_admin():
             st.markdown(f"#### ✏️ تعديل: **{USERS[target].get('display', target)}**")
             with st.form("edit_user_form"):
@@ -323,7 +177,7 @@ def render_settings(df_emp, df_kpi, df_data):
                                                 value=USERS[target].get("display", ""))
                     new_uname_e = st.text_input("اسم الدخول (username)",
                                                  value=target,
-                                                 help="يمكن تغيير اسم الدخول")
+                                                 help="يمكن تغيير اسم الدخول — سيتم إنشاء مستخدم جديد بالاسم الجديد")
                     new_role_e = st.selectbox(
                         "الدور",
                         ["user", "admin", "super_admin"],
@@ -362,6 +216,7 @@ def render_settings(df_emp, df_kpi, df_data):
                     if new_pw_e.strip():
                         updated_data["password"] = hash_pw(new_pw_e)
 
+                    # إذا تغير اسم الدخول: احذف القديم وأضف الجديد
                     if new_uname_final != target:
                         del USERS[target]
                     USERS[new_uname_final] = updated_data
@@ -376,6 +231,7 @@ def render_settings(df_emp, df_kpi, df_data):
                     st.session_state.settings_target = None
                     st.rerun()
 
+        # ── إضافة مستخدم جديد — للأدمن الرئيسي فقط ─────────────────
         elif _is_super_admin():
             st.markdown("#### ➕ إضافة مستخدم جديد")
             with st.form("add_user_form"):
@@ -414,9 +270,9 @@ def render_settings(df_emp, df_kpi, df_data):
                     else:
                         st.error("⚠️ أدخل اسم الدخول وكلمة المرور.")
 
-    # ═══════════════════════════════════════════════════════════════════
-    # تاب 2 — المستخدمون التجريبيون
-    # ═══════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════
+    # تاب 2 — المستخدمون التجريبيون (super_admin فقط يعدل/يحذف)
+    # ══════════════════════════════════════════════════════════════════
     with set_tab2:
         st.markdown("#### ⏳ المستخدمون التجريبيون")
         if not _is_super_admin():
@@ -575,9 +431,9 @@ def render_settings(df_emp, df_kpi, df_data):
                     st.session_state.settings_target = None
                     st.rerun()
 
-    # ═══════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════
     # تاب 3 — إعدادات الشركة
-    # ═══════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════
     with set_tab3:
         st.markdown("#### 🏢 إعدادات الشركة والتقارير")
         APP_CFG = load_app_settings()
@@ -632,34 +488,20 @@ def render_settings(df_emp, df_kpi, df_data):
                 st.success("✅ تم حفظ إعدادات الشركة.")
                 st.rerun()
 
-    # ═══════════════════════════════════════════════════════════════════
-    # 🆕 تاب 4 — الإجراءات التأديبية
-    # ═══════════════════════════════════════════════════════════════════
-    with set_tab_disc:
-        _render_disciplinary_tab(df_emp)
-
-    # ═══════════════════════════════════════════════════════════════════
-    # تاب 5 و 6 و 7
-    # ═══════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════
+    # تاب 4 و 5 و 6
+    # ══════════════════════════════════════════════════════════════════
     with set_tab4:
-        try:
-            if _EMP_KPI_OK:
-                render_employees_panel()
-            else:
-                render_employee_management(df_emp, df_data, df_kpi, load_app_settings(), LOGO_PATH)
-        except Exception as _e4:
-            st.warning(f"⚠️ تعذّر تحميل إدارة الموظفين: {_e4}")
-            st.info("💡 استورد البيانات من تبويب 'قاعدة البيانات' أولاً.")
+        if _EMP_KPI_OK:
+            render_employees_panel()
+        else:
+            render_employee_management(df_emp, df_data, df_kpi, load_app_settings(), LOGO_PATH)
 
     with set_tab_kpi:
-        try:
-            if _EMP_KPI_OK:
-                render_kpis_panel()
-            else:
-                st.info("employees_kpis_panel.py غير موجود")
-        except Exception as _ek:
-            st.warning(f"⚠️ تعذّر تحميل مؤشرات الأداء: {_ek}")
-            st.info("💡 استورد البيانات من تبويب 'قاعدة البيانات' أولاً.")
+        if _EMP_KPI_OK:
+            render_kpis_panel()
+        else:
+            st.info("employees_kpis_panel.py غير موجود")
 
     with set_tab5:
         render_cv_reports(df_emp, df_data, df_kpi, load_app_settings(), LOGO_PATH)
