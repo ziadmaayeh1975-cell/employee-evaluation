@@ -75,103 +75,71 @@ def _role_color(role):
 # ══════════════════════════════════════════════════════════════════
 # دالة عرض تبويب الإجراءات التأديبية
 # ══════════════════════════════════════════════════════════════════
-def _render_disciplinary_tab(df_emp):
-    """تبويب إدارة الإجراءات التأديبية."""
+ef _render_disciplinary_tab(df_emp):
+    """تبويب إدارة الإجراءات التأديبية — موحد مع قائمة الموظفين"""
     st.markdown("### ⚠️ إدارة الإجراءات التأديبية")
     
     if not _DISCIPLINARY_OK:
         st.error("❌ دوال الإجراءات التأديبية غير متوفرة. تأكد من تحديث database_manager.py")
         return
-    
-    # ── التحقق من الصلاحيات ─────────────────────────────────────────
-    if not _is_super_admin():
-        st.info("👁️ يمكنك عرض الإجراءات التأديبية فقط — صلاحية الإضافة والتعديل للأدمن الرئيسي.")
-    
-    # ── تحميل البيانات ──────────────────────────────────────────────
-    all_actions = load_disciplinary_actions()
-    
-    # ── قائمة الموظفين ──────────────────────────────────────────────
+
+    # ══════════════════════════════════════════════════════════════
+    # سحب أسماء الموظفين من df_emp (نفس المصدر المستخدم في إدارة الموظفين)
+    # ══════════════════════════════════════════════════════════════
     emp_list = []
-    try:
-        # من قاعدة البيانات
-        employees_db = load_employees_db()
-        emp_list = [e.get("EmployeeName", "") for e in employees_db if e.get("EmployeeName")]
-    except:
-        pass
+    if df_emp is not None and not df_emp.empty and "EmployeeName" in df_emp.columns:
+        emp_list = sorted([
+            str(e).strip() for e in df_emp["EmployeeName"].dropna().tolist()
+            if str(e).strip() not in ("", "nan", "None")
+        ])
     
-    if not emp_list and df_emp is not None and not df_emp.empty:
-        emp_list = [str(e).strip() for e in df_emp["EmployeeName"].dropna().tolist() 
-                    if str(e).strip() not in ("", "nan")]
-    
-    emp_list = sorted(set(emp_list))
-    
+    # احتياطي: إذا لم يوجد في df_emp، نحاول من قاعدة البيانات
+    if not emp_list:
+        try:
+            employees_db = load_employees_db()
+            emp_list = sorted([e.get("EmployeeName", "") for e in employees_db 
+                               if e.get("EmployeeName") and str(e.get("EmployeeName")).strip() not in ("", "nan")])
+        except:
+            pass
+
+    if not emp_list:
+        st.warning("⚠️ لا يوجد موظفون مسجلون حالياً. اذهب إلى تبويب 'إدارة الموظفين' وأضف موظفين أولاً.")
+        return
+
+    st.info(f"عدد الموظفين المتاحين: **{len(emp_list)}** موظف")
+
     # ══════════════════════════════════════════════════════════════
     # إضافة إجراء تأديبي جديد (للأدمن الرئيسي فقط)
     # ══════════════════════════════════════════════════════════════
     if _is_super_admin():
-        st.markdown("---")
         st.markdown("#### ➕ إضافة إجراء تأديبي جديد")
-        
         with st.form("add_disciplinary_form", clear_on_submit=True):
             col1, col2 = st.columns(2)
-            
             with col1:
                 sel_emp = st.selectbox(
                     "👤 اسم الموظف",
                     ["-- اختر الموظف --"] + emp_list,
                     key="disc_emp"
                 )
-                
                 action_type = st.selectbox(
                     "📋 نوع الإجراء",
                     [
-                        "إنذار شفهي",
-                        "إنذار كتابي أول",
-                        "إنذار كتابي ثاني",
-                        "إنذار كتابي نهائي",
-                        "خصم من الراتب",
-                        "إيقاف عن العمل",
-                        "تخفيض الدرجة",
-                        "إنهاء الخدمات",
-                        "أخرى"
+                        "إنذار شفهي", "إنذار كتابي أول", "إنذار كتابي ثاني", 
+                        "إنذار كتابي نهائي", "خصم من الراتب", "إيقاف عن العمل", 
+                        "تخفيض الدرجة", "إنهاء الخدمات", "أخرى"
                     ],
                     key="disc_type"
                 )
-            
             with col2:
-                action_date = st.date_input(
-                    "📅 تاريخ الإجراء",
-                    value=date.today(),
-                    key="disc_date"
-                )
-                
-                action_month = st.selectbox(
-                    "🗓️ الشهر المرتبط",
-                    ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
-                     "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"],
-                    index=date.today().month - 1,
-                    key="disc_month"
-                )
+                action_date = st.date_input("📅 تاريخ الإجراء", value=date.today(), key="disc_date")
+                action_month = st.selectbox("🗓️ الشهر", MONTHS_AR, index=date.today().month-1, key="disc_month")
             
-            action_year = st.selectbox(
-                "📆 السنة",
-                [2024, 2025, 2026, 2027],
-                index=1,
-                key="disc_year"
-            )
-            
-            description = st.text_area(
-                "📝 وصف الإجراء / السبب",
-                placeholder="اكتب تفاصيل الإجراء التأديبي والسبب...",
-                height=100,
-                key="disc_desc"
-            )
-            
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                submitted = st.form_submit_button("💾 حفظ الإجراء", use_container_width=True, type="primary")
-            with col_btn2:
-                st.form_submit_button("❌ إلغاء", use_container_width=True)
+            action_year = st.selectbox("📆 السنة", [2024, 2025, 2026, 2027], index=1, key="disc_year")
+            description = st.text_area("📝 وصف الإجراء / السبب", 
+                                       placeholder="اكتب تفاصيل الإجراء التأديبي والسبب...", 
+                                       height=100, key="disc_desc")
+
+            submitted = st.form_submit_button("💾 حفظ الإجراء", type="primary", use_container_width=True)
             
             if submitted:
                 if sel_emp == "-- اختر الموظف --":
@@ -190,158 +158,73 @@ def _render_disciplinary_tab(df_emp):
                         "created_by": st.session_state.get("username", ""),
                         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M")
                     }
-                    
                     ok, err = save_disciplinary_action(new_action)
                     if ok:
                         st.success(f"✅ تم حفظ الإجراء التأديبي لـ {sel_emp}")
                         st.rerun()
                     else:
                         st.error(f"❌ فشل الحفظ: {err}")
-    
+
     # ══════════════════════════════════════════════════════════════
     # عرض سجل الإجراءات التأديبية
     # ══════════════════════════════════════════════════════════════
     st.markdown("---")
     st.markdown("#### 📋 سجل الإجراءات التأديبية")
+
+    all_actions = load_disciplinary_actions()
     
     # فلترة
     filter_col1, filter_col2, filter_col3 = st.columns(3)
     with filter_col1:
-        filter_emp = st.selectbox(
-            "🔍 فلترة حسب الموظف",
-            ["الكل"] + emp_list,
-            key="filter_disc_emp"
-        )
+        filter_emp = st.selectbox("🔍 فلترة حسب الموظف", ["الكل"] + emp_list, key="filter_disc_emp")
     with filter_col2:
-        filter_year = st.selectbox(
-            "🔍 فلترة حسب السنة",
-            ["الكل", 2024, 2025, 2026, 2027],
-            key="filter_disc_year"
-        )
+        filter_year = st.selectbox("🔍 فلترة حسب السنة", ["الكل", 2024, 2025, 2026, 2027], key="filter_disc_year")
     with filter_col3:
-        filter_type = st.selectbox(
-            "🔍 فلترة حسب النوع",
-            ["الكل", "إنذار شفهي", "إنذار كتابي أول", "إنذار كتابي ثاني",
-             "إنذار كتابي نهائي", "خصم من الراتب", "إيقاف عن العمل",
-             "تخفيض الدرجة", "إنهاء الخدمات", "أخرى"],
-            key="filter_disc_type"
-        )
-    
-    # تطبيق الفلترة
+        filter_type = st.selectbox("🔍 فلترة حسب النوع", 
+            ["الكل", "إنذار شفهي", "إنذار كتابي أول", "إنذار كتابي ثاني", 
+             "إنذار كتابي نهائي", "خصم من الراتب", "إيقاف عن العمل", 
+             "تخفيض الدرجة", "إنهاء الخدمات", "أخرى"], 
+            key="filter_disc_type")
+
+    # تطبيق الفلتر
     filtered_actions = all_actions.copy()
     if filter_emp != "الكل":
         filtered_actions = [a for a in filtered_actions if a.get("employee_name") == filter_emp]
     if filter_year != "الكل":
-        filtered_actions = [a for a in filtered_actions if a.get("year") == int(filter_year)]
+        filtered_actions = [a for a in filtered_actions if str(a.get("year")) == str(filter_year)]
     if filter_type != "الكل":
         filtered_actions = [a for a in filtered_actions if a.get("action_type") == filter_type]
-    
+
     if not filtered_actions:
-        st.info("📭 لا توجد إجراءات تأديبية مسجلة.")
+        st.info("📭 لا توجد إجراءات تأديبية مسجلة لهذا الفلتر.")
     else:
-        # ترتيب حسب التاريخ (الأحدث أولاً)
-        filtered_actions = sorted(filtered_actions, 
-                                   key=lambda x: x.get("action_date", ""), 
-                                   reverse=True)
+        filtered_actions = sorted(filtered_actions, key=lambda x: x.get("action_date", ""), reverse=True)
         
-        # إحصائيات سريعة
         st.markdown(f"""
-        <div style="background:#FEF3C7;padding:10px 16px;border-radius:8px;
-                    border-right:4px solid #F59E0B;margin-bottom:16px;">
-            <b>📊 إجمالي الإجراءات:</b> {len(filtered_actions)} إجراء
+        <div style="background:#FEF3C7;padding:10px 16px;border-radius:8px;border-right:4px solid #F59E0B;margin-bottom:16px;">
+            <b>📊 إجمالي الإجراءات المعروضة:</b> {len(filtered_actions)}
         </div>
         """, unsafe_allow_html=True)
-        
-        # عرض الإجراءات
+
         for idx, action in enumerate(filtered_actions):
-            emp_name = action.get("employee_name", "---")
-            action_type = action.get("action_type", "---")
-            action_date = action.get("action_date", "---")
-            month = action.get("month", "---")
-            year = action.get("year", "---")
-            description = action.get("description", "")
-            action_id = action.get("id", "")
-            
-            # تحديد لون الإجراء حسب النوع
-            if "إنهاء" in action_type:
-                border_color = "#DC2626"
-                bg_color = "#FEE2E2"
-            elif "إيقاف" in action_type or "خصم" in action_type:
-                border_color = "#EA580C"
-                bg_color = "#FFEDD5"
-            elif "نهائي" in action_type:
-                border_color = "#D97706"
-                bg_color = "#FEF3C7"
-            else:
-                border_color = "#CA8A04"
-                bg_color = "#FEF9C3"
-            
-            row_bg = "#FAFAFA" if idx % 2 == 0 else "white"
-            
             st.markdown(f"""
-            <div style="background:{row_bg};border:1px solid #E5E7EB;border-radius:10px;
-                        padding:12px 16px;margin-bottom:10px;border-right:5px solid {border_color};">
-                <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <div>
-                        <span style="font-weight:bold;color:#1F2937;font-size:14px;">
-                            👤 {emp_name}
-                        </span>
-                        <span style="background:{bg_color};color:{border_color};padding:2px 8px;
-                                     border-radius:4px;font-size:11px;margin-right:10px;font-weight:bold;">
-                            {action_type}
-                        </span>
-                    </div>
-                    <div style="font-size:12px;color:#6B7280;">
-                        📅 {action_date} | 🗓️ {month} {year}
-                    </div>
-                </div>
-                <div style="margin-top:8px;font-size:13px;color:#374151;
-                            background:#F9FAFB;padding:8px 12px;border-radius:6px;">
-                    {description}
-                </div>
+            <div style="background:#FEF2F2;padding:12px 16px;border-radius:10px;border-right:5px solid #EF4444;margin-bottom:10px;">
+                <b>👤 {action.get('employee_name')}</b> — 
+                <span style="color:#B91C1C;font-weight:bold;">{action.get('action_type')}</span><br>
+                <small>📅 {action.get('action_date')} | {action.get('month')} {action.get('year')}</small><br>
+                <small style="color:#444;">{action.get('description')}</small>
             </div>
             """, unsafe_allow_html=True)
-            
+
             # زر الحذف (للأدمن الرئيسي فقط)
             if _is_super_admin():
-                col_del, col_space = st.columns([1, 5])
-                with col_del:
-                    if st.button("🗑️ حذف", key=f"del_disc_{action_id}", use_container_width=True):
-                        ok, err = delete_disciplinary_action(action_id)
-                        if ok:
-                            st.success("✅ تم الحذف")
-                            st.rerun()
-                        else:
-                            st.error(f"❌ فشل الحذف: {err}")
-    
-    # ══════════════════════════════════════════════════════════════
-    # تصدير التقرير
-    # ══════════════════════════════════════════════════════════════
-    if filtered_actions and _is_admin():
-        st.markdown("---")
-        if st.button("📥 تصدير التقرير إلى Excel", use_container_width=True):
-            try:
-                import pandas as pd
-                import io
-                
-                df_export = pd.DataFrame(filtered_actions)
-                df_export = df_export[["employee_name", "action_type", "action_date", 
-                                        "month", "year", "description"]]
-                df_export.columns = ["اسم الموظف", "نوع الإجراء", "تاريخ الإجراء",
-                                      "الشهر", "السنة", "الوصف"]
-                
-                buffer = io.BytesIO()
-                df_export.to_excel(buffer, index=False, engine="openpyxl")
-                buffer.seek(0)
-                
-                st.download_button(
-                    label="⬇️ تحميل الملف",
-                    data=buffer,
-                    file_name=f"الإجراءات_التأديبية_{date.today().strftime('%Y_%m_%d')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-            except Exception as e:
-                st.error(f"❌ خطأ في التصدير: {e}")
+                if st.button("🗑️ حذف هذا الإجراء", key=f"del_{action.get('id')}", use_container_width=True):
+                    ok, err = delete_disciplinary_action(action.get("id"))
+                    if ok:
+                        st.success("✅ تم حذف الإجراء")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {err}")
 
 
 def render_settings(df_emp, df_kpi, df_data):
