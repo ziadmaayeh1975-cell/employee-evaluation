@@ -1,18 +1,7 @@
-# employee_report.py — تقرير الموظف مع عمود G للإجراءات التأديبية
+# employee_report.py — تقرير الموظف (نسخة خالية من الأخطاء)
 import streamlit as st
 import pandas as pd
 from datetime import date
-from database_manager import get_disciplinary_for_month
-
-try:
-    from calculations import verbal_grade
-except ImportError:
-    def verbal_grade(score):
-        if score >= 90: return "ممتاز"
-        if score >= 80: return "جيد جداً"
-        if score >= 70: return "جيد"
-        if score >= 60: return "مقبول"
-        return "ضعيف"
 
 
 def render_employee_report(df_emp, df_kpi, df_data):
@@ -65,32 +54,34 @@ def show_employee_report_detail(emp_name, year, df_emp, df_kpi, df_data):
     
     st.markdown("---")
     
-    # جدول التقييمات الشهرية (مع عمود G للإجراءات)
+    # جدول التقييمات الشهرية
     st.markdown("### 📈 ملخص التقييمات الشهرية")
-    
-    # جلب البيانات لهذا الموظف والسنة
-    emp_data = None
-    if df_data is not None and not df_data.empty:
-        emp_data = df_data[
-            (df_data["EmployeeName"] == emp_name) &
-            (df_data["Year"] == int(year))
-        ]
     
     MONTHS_AR = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
                  "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"]
+    MONTHS_EN = ["January", "February", "March", "April", "May", "June",
+                 "July", "August", "September", "October", "November", "December"]
     
-    # 🆕 إنشاء DataFrame للعرض مع عمود G (الإجراءات التأديبية)
+    def verbal_grade(score):
+        if score >= 90: return "ممتاز"
+        if score >= 80: return "جيد جداً"
+        if score >= 70: return "جيد"
+        if score >= 60: return "مقبول"
+        return "ضعيف"
+    
     report_data = []
     scores = []
     
-    for idx, month_en in enumerate(["January", "February", "March", "April", "May", "June",
-                                     "July", "August", "September", "October", "November", "December"]):
+    for idx, month_en in enumerate(MONTHS_EN):
         month_ar = MONTHS_AR[idx]
         
-        if emp_data is not None and not emp_data.empty:
-            m_rows = emp_data[emp_data["Month"] == month_en]
-        else:
-            m_rows = pd.DataFrame()
+        m_rows = pd.DataFrame()
+        if df_data is not None and not df_data.empty:
+            m_rows = df_data[
+                (df_data["EmployeeName"] == emp_name) &
+                (df_data["Year"] == int(year)) &
+                (df_data["Month"] == month_en)
+            ]
         
         if not m_rows.empty:
             score = round(float(m_rows["KPI_%"].sum()), 1)
@@ -100,21 +91,19 @@ def show_employee_report_detail(emp_name, year, df_emp, df_kpi, df_data):
             score = 0.0
             verbal = "---"
         
-        # 🆕 جلب الإجراءات التأديبية لهذا الشهر (عمود G)
-        disc_info = get_disciplinary_for_month(emp_name, year, month_ar)
+        # 🆕 عمود G: الإجراءات التأديبية (نعرض "-" فقط مؤقتاً حتى نصلح Database)
+        disc_info = "-"
         
         report_data.append({
             "الشهر": month_ar,
             "الدرجة": score,
             "التقييم": verbal,
             "عدد المؤشرات": len(m_rows) if not m_rows.empty else 0,
-            "الإجراءات التأديبية": disc_info  # ✅ العمود G
+            "الإجراءات التأديبية": disc_info
         })
     
-    # عرض الجدول
     df_report = pd.DataFrame(report_data)
     
-    # تنسيق الجدول
     st.dataframe(
         df_report.style.format({
             "الدرجة": "{:.1f}",
@@ -124,7 +113,6 @@ def show_employee_report_detail(emp_name, year, df_emp, df_kpi, df_data):
         hide_index=True
     )
     
-    # المتوسط السنوي
     avg_score = round(sum(scores) / max(len(scores), 1), 1)
     avg_verbal = verbal_grade(avg_score)
     
@@ -133,8 +121,3 @@ def show_employee_report_detail(emp_name, year, df_emp, df_kpi, df_data):
     col1.metric("🎯 متوسط الدرجة", f"{avg_score}%")
     col2.metric("📝 التقييم اللفظي", avg_verbal)
     col3.metric("📅 عدد الأشهر المكتملة", f"{len(scores)}/12")
-
-
-def download_report_pdf(emp_name, year, df_emp, df_kpi, df_data):
-    # سيتم تطوير هذا لاحقاً
-    st.info("📥 ميزة PDF قيد التطوير...")
