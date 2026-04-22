@@ -6,9 +6,9 @@ from data_loader import save_evaluation
 from auth import get_current_reviewer, get_current_role
 from calculations import calc_kpi_score, rating_label, rating_label_color, verbal_grade, grade_color_hex
 
-# ══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # استيراد دوال قاعدة البيانات الجديدة
-# ══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 try:
     from database_manager import (
         get_previous_evaluation,
@@ -89,15 +89,14 @@ def _completion_indicator(df_data, emp_list, year):
     return result
 
 
-# ══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # دالة عرض نتيجة التقييم السابق
-# ══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 def _render_previous_evaluation(emp_name, current_year):
     """عرض نتيجة التقييم السابق للموظف."""
     prev_eval = get_previous_evaluation(emp_name, current_year)
     
     if prev_eval is None:
-        # لم يتم تقييمه سابقاً
         st.markdown(f"""
         <div style="background:#FEF3C7;border:2px solid #F59E0B;border-radius:10px;
                     padding:12px 16px;margin:10px 0;">
@@ -110,12 +109,10 @@ def _render_previous_evaluation(emp_name, current_year):
         </div>
         """, unsafe_allow_html=True)
     else:
-        # يوجد تقييم سابق
         prev_score = prev_eval.get("score", 0)
         prev_verbal = prev_eval.get("verbal", "---")
         prev_year = prev_eval.get("year", current_year - 1)
         
-        # تحديد لون النتيجة
         if prev_score >= 90:
             score_color = "#15803d"
             bg_color = "#DCFCE7"
@@ -161,59 +158,62 @@ def _render_previous_evaluation(emp_name, current_year):
         """, unsafe_allow_html=True)
 
 
-# ══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # دالة عرض الإجراءات التأديبية
-# ══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 def _render_disciplinary_actions(emp_name, year):
-    """عرض الإجراءات التأديبية للموظف."""
+    """عرض الإجراءات التأديبية للموظف في صفحة إدخال التقييم"""
     actions = get_employee_disciplinary_actions(emp_name, year)
     
     if not actions:
-        st.markdown(f"""
+        st.markdown("""
         <div style="background:#DCFCE7;border:2px solid #22C55E;border-radius:10px;
                     padding:10px 14px;margin:10px 0;">
             <div style="font-size:13px;color:#166534;font-weight:bold;">
-                ✅ الإجراءات التأديبية: لا يوجد إجراءات تأديبية
+                ✅ لا يوجد إجراءات تأديبية لهذا الموظف
             </div>
         </div>
         """, unsafe_allow_html=True)
-    else:
-        actions_html = ""
-        for action in actions:
-            action_date = action.get("action_date", "")
-            action_type = action.get("action_type", "")
-            description = action.get("description", "")
-            actions_html += f"""
-            <div style="background:#FEF2F2;padding:8px 12px;border-radius:6px;
-                        margin:6px 0;border-right:4px solid #EF4444;">
-                <div style="font-size:12px;color:#991B1B;font-weight:bold;">
-                    📅 {action_date} — {action_type}
-                </div>
-                <div style="font-size:11px;color:#7F1D1D;margin-top:4px;">
-                    {description}
-                </div>
-            </div>
-            """
+        return
+    
+    items_html = ""
+    for action in actions:
+        action_date = str(action.get('action_date', ''))
+        action_type = str(action.get('action_type', ''))
+        description = str(action.get('description', ''))
         
-        st.markdown(f"""
-        <div style="background:#FEE2E2;border:2px solid #EF4444;border-radius:10px;
-                    padding:12px 16px;margin:10px 0;">
-            <div style="font-size:13px;color:#991B1B;font-weight:bold;margin-bottom:8px;">
-                ⚠️ الإجراءات التأديبية ({len(actions)} إجراء)
+        items_html += f"""
+        <div style="background:#FEF2F2;padding:8px 12px;border-radius:6px;
+                    margin:6px 0;border-right:4px solid #EF4444;">
+            <div style="font-size:12px;color:#991B1B;font-weight:bold;">
+                📅 {action_date} — {action_type}
             </div>
-            {actions_html}
+            <div style="font-size:11px;color:#7F1D1D;margin-top:4px;">
+                {description}
+            </div>
         </div>
-        """, unsafe_allow_html=True)
+        """
+    
+    html_code = f"""
+    <div style="background:#FEE2E2;border:2px solid #EF4444;border-radius:10px;
+                padding:12px 16px;margin:10px 0;">
+        <div style="font-size:13px;color:#991B1B;font-weight:bold;margin-bottom:8px;">
+            ⚠️ الإجراءات التأديبية ({len(actions)} إجراء)
+        </div>
+        {items_html}
+    </div>
+    """
+    
+    st.markdown(html_code, unsafe_allow_html=True)
 
 
-# ══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # دالة عرض معلومات الموظف الإضافية
-# ══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 def _render_employee_extra_info(emp_name, df_emp):
     """عرض معلومات الموظف الإضافية (تاريخ التعيين، الراتب)."""
     extra_info = {}
     
-    # محاولة جلب المعلومات من قاعدة البيانات أولاً
     if _DB_FUNCS_AVAILABLE:
         employees_db = load_employees_db()
         for emp in employees_db:
@@ -221,7 +221,6 @@ def _render_employee_extra_info(emp_name, df_emp):
                 extra_info = emp
                 break
     
-    # إذا لم نجد في DB، نحاول من df_emp
     if not extra_info:
         emp_row = df_emp[df_emp["EmployeeName"] == emp_name]
         if not emp_row.empty:
@@ -234,7 +233,6 @@ def _render_employee_extra_info(emp_name, df_emp):
     hire_date = extra_info.get("hire_date", "")
     salary = extra_info.get("salary", "")
     
-    # عرض المعلومات الإضافية فقط إذا كانت موجودة
     if hire_date or salary:
         info_parts = []
         if hire_date and str(hire_date).strip() not in ("", "nan", "None"):
@@ -321,9 +319,6 @@ def render_entry(df_emp, df_kpi, df_data):
         st.info("⬆️ اختر المقيم أولاً.")
         return
 
-    # ══════════════════════════════════════════════════════════════
-    # مؤشر اكتمال التقييمات
-    # ══════════════════════════════════════════════════════════════
     if emp_list and sel_emp == "-- اختر --":
         st.markdown("---")
         st.markdown("#### 📊 حالة التقييمات لهذا العام")
@@ -375,9 +370,6 @@ def render_entry(df_emp, df_kpi, df_data):
             st.error(f"⚠️ يوجد تقييم محفوظ لـ ({sel_emp}) في {sel_month} {sel_year}.")
             return
 
-    # ══════════════════════════════════════════════════════════════
-    # رأس بيانات الموظف + زر إلغاء
-    # ══════════════════════════════════════════════════════════════
     hc1, hc2 = st.columns([5, 1])
     with hc1:
         st.markdown(f"""
@@ -394,19 +386,13 @@ def render_entry(df_emp, df_kpi, df_data):
             st.session_state.pop("sel_emp", None)
             st.rerun()
 
-    # ══════════════════════════════════════════════════════════════
     # 🆕 عرض معلومات الموظف الإضافية
-    # ══════════════════════════════════════════════════════════════
     _render_employee_extra_info(sel_emp, df_emp)
 
-    # ══════════════════════════════════════════════════════════════
     # 🆕 عرض نتيجة التقييم السابق
-    # ══════════════════════════════════════════════════════════════
     _render_previous_evaluation(sel_emp, sel_year)
 
-    # ══════════════════════════════════════════════════════════════
     # 🆕 عرض الإجراءات التأديبية
-    # ══════════════════════════════════════════════════════════════
     _render_disciplinary_actions(sel_emp, sel_year)
 
     st.markdown("---")
@@ -419,7 +405,6 @@ def render_entry(df_emp, df_kpi, df_data):
     job_kpis  = kpi_rows_raw[~kpi_rows_raw["KPI_Name"].isin(PERSONAL_KPIS)]
     pers_kpis = kpi_rows_raw[kpi_rows_raw["KPI_Name"].isin(PERSONAL_KPIS)]
 
-    # تحميل المسودة إن وجدت
     draft = _load_draft(sel_emp, sel_month, sel_year)
     if draft:
         st.info(f"📝 يوجد مسودة محفوظة بتاريخ {draft['timestamp']} — يمكنك متابعة الإدخال أو البدء من جديد.")
@@ -533,9 +518,6 @@ def render_entry(df_emp, df_kpi, df_data):
 
     rev_name = sel_reviewer if (sel_reviewer != "-- اختر المقيم --") else mgr_name
 
-    # ══════════════════════════════════════════════════════════════
-    # أزرار الحفظ والمسودة والإلغاء
-    # ══════════════════════════════════════════════════════════════
     b1, b2, b3 = st.columns(3)
 
     with b1:
