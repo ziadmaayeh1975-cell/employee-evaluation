@@ -3,14 +3,16 @@ from auth import ensure_session_state, load_users, render_login, stop_if_trial_e
 from data_loader import load_data
 from navigation import render_sidebar, render_page_header
 from styles import apply_global_styles
-from entry import render_entry
-from manage import render_manage
-from employee_report import render_employee_report
-from department_report import render_department_report
-from yearly_summary import render_yearly_summary
-from settings_page import render_settings
+from pages import (
+    render_entry,
+    render_manage,
+    render_employee_report,
+    render_department_report,
+    render_yearly_summary,
+    render_settings,
+)
 
-st.set_page_config(page_title="برنامج تقييم الموظفين", layout="wide", page_icon="📊")
+st.set_page_config(page_title="نظام تقييم فنون", layout="wide", page_icon="📊")
 apply_global_styles()
 ensure_session_state()
 
@@ -21,6 +23,7 @@ if not st.session_state.logged_in:
 
 stop_if_trial_expired()
 
+# ── مزامنة تلقائية من Excel إذا تم تعديله ──────────────
 try:
     from database_manager import sync_from_excel_if_updated, db_exists
     if db_exists():
