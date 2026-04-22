@@ -2,7 +2,7 @@
 import os
 from datetime import datetime, date
 import streamlit as st
-from constants import LOGO_PATH
+from constants import LOGO_PATH, MONTHS_AR
 from auth import (hash_pw, load_users, save_users, add_user, update_user, delete_user,
                   load_trial_users, save_trial_users,
                   load_app_settings, save_app_settings)
@@ -29,9 +29,9 @@ except ImportError:
     def load_profiles():
         return []
 
-# ══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # استيراد دوال الإجراءات التأديبية
-# ══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 try:
     from database_manager import (
         load_disciplinary_actions,
@@ -54,11 +54,9 @@ except ImportError:
 
 # ── دوال مساعدة للأدوار ──────────────────────────────────────────────
 def _is_super_admin():
-    """الأدمن الرئيسي: role == 'super_admin'"""
     return st.session_state.get("role") == "super_admin"
 
 def _is_admin():
-    """أدمن عادي أو رئيسي"""
     return st.session_state.get("role") in ("admin", "super_admin")
 
 def _role_label(role):
@@ -72,20 +70,18 @@ def _role_color(role):
             "user":        "#166534"}.get(role, "#166534")
 
 
-# ══════════════════════════════════════════════════════════════════
-# دالة عرض تبويب الإجراءات التأديبية
-# ══════════════════════════════════════════════════════════════════
-ef _render_disciplinary_tab(df_emp):
+# ═══════════════════════════════════════════════════════════════════
+# 🆕 تبويب الإجراءات التأديبية (المتحد مع قائمة الموظفين)
+# ═══════════════════════════════════════════════════════════════════
+def _render_disciplinary_tab(df_emp):
     """تبويب إدارة الإجراءات التأديبية — موحد مع قائمة الموظفين"""
     st.markdown("### ⚠️ إدارة الإجراءات التأديبية")
     
     if not _DISCIPLINARY_OK:
-        st.error("❌ دوال الإجراءات التأديبية غير متوفرة. تأكد من تحديث database_manager.py")
+        st.error("❌ دوال الإجراءات التأديبية غير متوفرة.")
         return
 
-    # ══════════════════════════════════════════════════════════════
-    # سحب أسماء الموظفين من df_emp (نفس المصدر المستخدم في إدارة الموظفين)
-    # ══════════════════════════════════════════════════════════════
+    # سحب أسماء الموظفين من df_emp (نفس مصدر إدارة الموظفين)
     emp_list = []
     if df_emp is not None and not df_emp.empty and "EmployeeName" in df_emp.columns:
         emp_list = sorted([
@@ -93,55 +89,43 @@ ef _render_disciplinary_tab(df_emp):
             if str(e).strip() not in ("", "nan", "None")
         ])
     
-    # احتياطي: إذا لم يوجد في df_emp، نحاول من قاعدة البيانات
+    # احتياطي من قاعدة البيانات
     if not emp_list:
         try:
             employees_db = load_employees_db()
             emp_list = sorted([e.get("EmployeeName", "") for e in employees_db 
-                               if e.get("EmployeeName") and str(e.get("EmployeeName")).strip() not in ("", "nan")])
+                               if e.get("EmployeeName")])
         except:
             pass
 
     if not emp_list:
-        st.warning("⚠️ لا يوجد موظفون مسجلون حالياً. اذهب إلى تبويب 'إدارة الموظفين' وأضف موظفين أولاً.")
+        st.warning("⚠️ لا يوجد موظفون. أضف موظفين من تبويب 'إدارة الموظفين' أولاً.")
         return
 
-    st.info(f"عدد الموظفين المتاحين: **{len(emp_list)}** موظف")
+    st.info(f"عدد الموظفين المتاحين: **{len(emp_list)}**")
 
-    # ══════════════════════════════════════════════════════════════
-    # إضافة إجراء تأديبي جديد (للأدمن الرئيسي فقط)
-    # ══════════════════════════════════════════════════════════════
+    # إضافة إجراء تأديبي جديد
     if _is_super_admin():
         st.markdown("#### ➕ إضافة إجراء تأديبي جديد")
         with st.form("add_disciplinary_form", clear_on_submit=True):
             col1, col2 = st.columns(2)
             with col1:
-                sel_emp = st.selectbox(
-                    "👤 اسم الموظف",
-                    ["-- اختر الموظف --"] + emp_list,
-                    key="disc_emp"
-                )
-                action_type = st.selectbox(
-                    "📋 نوع الإجراء",
-                    [
-                        "إنذار شفهي", "إنذار كتابي أول", "إنذار كتابي ثاني", 
-                        "إنذار كتابي نهائي", "خصم من الراتب", "إيقاف عن العمل", 
-                        "تخفيض الدرجة", "إنهاء الخدمات", "أخرى"
-                    ],
-                    key="disc_type"
-                )
+                sel_emp = st.selectbox("👤 اسم الموظف", ["-- اختر الموظف --"] + emp_list, key="disc_emp")
+                action_type = st.selectbox("📋 نوع الإجراء", [
+                    "إنذار شفهي", "إنذار كتابي أول", "إنذار كتابي ثاني", 
+                    "إنذار كتابي نهائي", "خصم من الراتب", "إيقاف عن العمل", 
+                    "تخفيض الدرجة", "إنهاء الخدمات", "أخرى"
+                ], key="disc_type")
             with col2:
                 action_date = st.date_input("📅 تاريخ الإجراء", value=date.today(), key="disc_date")
                 action_month = st.selectbox("🗓️ الشهر", MONTHS_AR, index=date.today().month-1, key="disc_month")
             
             action_year = st.selectbox("📆 السنة", [2024, 2025, 2026, 2027], index=1, key="disc_year")
             description = st.text_area("📝 وصف الإجراء / السبب", 
-                                       placeholder="اكتب تفاصيل الإجراء التأديبي والسبب...", 
+                                       placeholder="اكتب تفاصيل الإجراء...", 
                                        height=100, key="disc_desc")
 
-            submitted = st.form_submit_button("💾 حفظ الإجراء", type="primary", use_container_width=True)
-            
-            if submitted:
+            if st.form_submit_button("💾 حفظ الإجراء", type="primary", use_container_width=True):
                 if sel_emp == "-- اختر الموظف --":
                     st.error("⚠️ اختر الموظف أولاً.")
                 elif not description.strip():
@@ -160,71 +144,54 @@ ef _render_disciplinary_tab(df_emp):
                     }
                     ok, err = save_disciplinary_action(new_action)
                     if ok:
-                        st.success(f"✅ تم حفظ الإجراء التأديبي لـ {sel_emp}")
+                        st.success(f"✅ تم حفظ الإجراء لـ {sel_emp}")
                         st.rerun()
                     else:
                         st.error(f"❌ فشل الحفظ: {err}")
 
-    # ══════════════════════════════════════════════════════════════
-    # عرض سجل الإجراءات التأديبية
-    # ══════════════════════════════════════════════════════════════
+    # عرض الإجراءات المسجلة
     st.markdown("---")
     st.markdown("#### 📋 سجل الإجراءات التأديبية")
 
     all_actions = load_disciplinary_actions()
     
+    if not all_actions:
+        st.info("📭 لا توجد إجراءات تأديبية مسجلة حتى الآن.")
+        return
+
     # فلترة
     filter_col1, filter_col2, filter_col3 = st.columns(3)
     with filter_col1:
-        filter_emp = st.selectbox("🔍 فلترة حسب الموظف", ["الكل"] + emp_list, key="filter_disc_emp")
+        filter_emp = st.selectbox("🔍 الموظف", ["الكل"] + emp_list, key="filter_disc_emp")
     with filter_col2:
-        filter_year = st.selectbox("🔍 فلترة حسب السنة", ["الكل", 2024, 2025, 2026, 2027], key="filter_disc_year")
+        filter_year = st.selectbox("🔍 السنة", ["الكل", 2024, 2025, 2026, 2027], key="filter_disc_year")
     with filter_col3:
-        filter_type = st.selectbox("🔍 فلترة حسب النوع", 
+        filter_type = st.selectbox("🔍 نوع الإجراء", 
             ["الكل", "إنذار شفهي", "إنذار كتابي أول", "إنذار كتابي ثاني", 
              "إنذار كتابي نهائي", "خصم من الراتب", "إيقاف عن العمل", 
              "تخفيض الدرجة", "إنهاء الخدمات", "أخرى"], 
             key="filter_disc_type")
 
-    # تطبيق الفلتر
-    filtered_actions = all_actions.copy()
+    filtered = all_actions.copy()
     if filter_emp != "الكل":
-        filtered_actions = [a for a in filtered_actions if a.get("employee_name") == filter_emp]
+        filtered = [a for a in filtered if a.get("employee_name") == filter_emp]
     if filter_year != "الكل":
-        filtered_actions = [a for a in filtered_actions if str(a.get("year")) == str(filter_year)]
+        filtered = [a for a in filtered if str(a.get("year")) == str(filter_year)]
     if filter_type != "الكل":
-        filtered_actions = [a for a in filtered_actions if a.get("action_type") == filter_type]
+        filtered = [a for a in filtered if a.get("action_type") == filter_type]
 
-    if not filtered_actions:
-        st.info("📭 لا توجد إجراءات تأديبية مسجلة لهذا الفلتر.")
+    if not filtered:
+        st.info("📭 لا توجد إجراءات مطابقة للفلتر.")
     else:
-        filtered_actions = sorted(filtered_actions, key=lambda x: x.get("action_date", ""), reverse=True)
-        
-        st.markdown(f"""
-        <div style="background:#FEF3C7;padding:10px 16px;border-radius:8px;border-right:4px solid #F59E0B;margin-bottom:16px;">
-            <b>📊 إجمالي الإجراءات المعروضة:</b> {len(filtered_actions)}
-        </div>
-        """, unsafe_allow_html=True)
-
-        for idx, action in enumerate(filtered_actions):
+        for action in sorted(filtered, key=lambda x: x.get("action_date", ""), reverse=True):
             st.markdown(f"""
-            <div style="background:#FEF2F2;padding:12px 16px;border-radius:10px;border-right:5px solid #EF4444;margin-bottom:10px;">
-                <b>👤 {action.get('employee_name')}</b> — 
+            <div style="background:#FEF2F2;padding:12px;border-radius:10px;border-right:5px solid #EF4444;margin:8px 0;">
+                <b>{action.get('employee_name')}</b> — 
                 <span style="color:#B91C1C;font-weight:bold;">{action.get('action_type')}</span><br>
                 <small>📅 {action.get('action_date')} | {action.get('month')} {action.get('year')}</small><br>
-                <small style="color:#444;">{action.get('description')}</small>
+                <small>{action.get('description')}</small>
             </div>
             """, unsafe_allow_html=True)
-
-            # زر الحذف (للأدمن الرئيسي فقط)
-            if _is_super_admin():
-                if st.button("🗑️ حذف هذا الإجراء", key=f"del_{action.get('id')}", use_container_width=True):
-                    ok, err = delete_disciplinary_action(action.get("id"))
-                    if ok:
-                        st.success("✅ تم حذف الإجراء")
-                        st.rerun()
-                    else:
-                        st.error(f"❌ {err}")
 
 
 def render_settings(df_emp, df_kpi, df_data):
@@ -237,9 +204,9 @@ def render_settings(df_emp, df_kpi, df_data):
     TRIAL_DATA = load_trial_users()
     APP_CFG    = load_app_settings()
 
-    # ══════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════
     # 🆕 إضافة تبويب الإجراءات التأديبية
-    # ══════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════
     _tabs = ["👥 إدارة المستخدمين", "⏳ المستخدمون التجريبيون",
              "🏢 إعدادات الشركة", "⚠️ الإجراءات التأديبية",
              "👨‍💼 إدارة الموظفين", "📊 قائمة مؤشرات الأداء",
@@ -248,18 +215,18 @@ def render_settings(df_emp, df_kpi, df_data):
         _tabs.append("🗄️ قاعدة البيانات")
     
     _tab_objs       = st.tabs(_tabs)
-    set_tab1        = _tab_objs[0]  # إدارة المستخدمين
-    set_tab2        = _tab_objs[1]  # المستخدمون التجريبيون
-    set_tab3        = _tab_objs[2]  # إعدادات الشركة
-    set_tab_disc    = _tab_objs[3]  # 🆕 الإجراءات التأديبية
-    set_tab4        = _tab_objs[4]  # إدارة الموظفين
-    set_tab_kpi     = _tab_objs[5]  # مؤشرات الأداء
-    set_tab5        = _tab_objs[6]  # ملفات الموظفين
-    set_tab6        = _tab_objs[7] if _DB_PANEL_OK else None  # قاعدة البيانات
+    set_tab1        = _tab_objs[0]
+    set_tab2        = _tab_objs[1]
+    set_tab3        = _tab_objs[2]
+    set_tab_disc    = _tab_objs[3]
+    set_tab4        = _tab_objs[4]
+    set_tab_kpi     = _tab_objs[5]
+    set_tab5        = _tab_objs[6]
+    set_tab6        = _tab_objs[7] if _DB_PANEL_OK else None
 
-    # ══════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════
     # تاب 1 — إدارة المستخدمين
-    # ══════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════
     with set_tab1:
         st.markdown("### 👥 المستخدمون الفعّالون")
 
@@ -447,9 +414,9 @@ def render_settings(df_emp, df_kpi, df_data):
                     else:
                         st.error("⚠️ أدخل اسم الدخول وكلمة المرور.")
 
-    # ══════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════
     # تاب 2 — المستخدمون التجريبيون
-    # ══════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════
     with set_tab2:
         st.markdown("#### ⏳ المستخدمون التجريبيون")
         if not _is_super_admin():
@@ -608,9 +575,9 @@ def render_settings(df_emp, df_kpi, df_data):
                     st.session_state.settings_target = None
                     st.rerun()
 
-    # ══════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════
     # تاب 3 — إعدادات الشركة
-    # ══════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════
     with set_tab3:
         st.markdown("#### 🏢 إعدادات الشركة والتقارير")
         APP_CFG = load_app_settings()
@@ -665,15 +632,15 @@ def render_settings(df_emp, df_kpi, df_data):
                 st.success("✅ تم حفظ إعدادات الشركة.")
                 st.rerun()
 
-    # ══════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════
     # 🆕 تاب 4 — الإجراءات التأديبية
-    # ══════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════
     with set_tab_disc:
         _render_disciplinary_tab(df_emp)
 
-    # ══════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════
     # تاب 5 و 6 و 7
-    # ══════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════
     with set_tab4:
         try:
             if _EMP_KPI_OK:
