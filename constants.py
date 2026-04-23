@@ -1,6 +1,8 @@
 from openpyxl.styles import Border, Side
 
-FILE_PATH = "final Apprisal.xlsm"
+FILE_PATH = "final Apprisal.xlsm نسخة اصلية.xlsm"  # للاستيراد مرة واحدة فقط
+EMPLOYEES_JSON = "emp_profiles.json"
+KPIS_JSON = "db/kpis.json"
 LOGO_PATH = "logo.png"
 SETTINGS_FILE = "app_settings.json"
 TRIAL_FILE = "trial_users.json"
