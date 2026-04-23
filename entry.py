@@ -42,7 +42,6 @@ def render_entry(df_emp, df_kpi, df_data):
     # ── اختيار المقيم ───────────────────────────────────────────────
     with r1c1:
         if is_super_admin:
-            # أدمن رئيسي: يختار من كل المقيمين أو يكتب اسماً حراً
             reviewer_list = sorted([r for r in
                 df_emp[reviewer_col].dropna().astype(str).str.strip().unique()
                 if r not in ("","nan")])
@@ -50,7 +49,6 @@ def render_entry(df_emp, df_kpi, df_data):
                 ["-- اختر المقيم --"] + reviewer_list, key="sel_reviewer")
 
         elif is_admin:
-            # أدمن عادي مع reviewer → يرى مقيمه فقط
             if current_reviewer:
                 sel_reviewer = current_reviewer
                 st.markdown(f"""
@@ -59,7 +57,6 @@ def render_entry(df_emp, df_kpi, df_data):
                     <b>👨‍💼 المقيم:</b> {sel_reviewer}
                 </div>""", unsafe_allow_html=True)
             else:
-                # أدمن عادي بدون reviewer → يختار من الكل
                 reviewer_list = sorted([r for r in
                     df_emp[reviewer_col].dropna().astype(str).str.strip().unique()
                     if r not in ("","nan")])
@@ -67,7 +64,6 @@ def render_entry(df_emp, df_kpi, df_data):
                     ["-- اختر المقيم --"] + reviewer_list, key="sel_reviewer")
 
         else:
-            # user عادي
             if not current_reviewer:
                 st.warning("⚠️ لم يتم ربط حسابك بمقيم. تواصل مع المدير.")
                 return
@@ -86,7 +82,6 @@ def render_entry(df_emp, df_kpi, df_data):
         if not reviewer_chosen:
             emp_list = []
         elif is_super_admin and sel_reviewer == "-- اختر المقيم --":
-            # أدمن رئيسي لم يختر مقيماً بعد → كل الموظفين
             emp_list = sorted([str(e).strip() for e in
                 df_emp["EmployeeName"].dropna().tolist()
                 if str(e).strip() not in ("","nan")])
@@ -97,7 +92,6 @@ def render_entry(df_emp, df_kpi, df_data):
                 ]["EmployeeName"].dropna().tolist()
                 if str(e).strip() not in ("","nan")]
 
-        # الأدمن الرئيسي: إذا اختار مقيماً وقائمته فارغة → أظهر الكل
         if is_super_admin and not emp_list:
             emp_list = sorted([str(e).strip() for e in
                 df_emp["EmployeeName"].dropna().tolist()
@@ -161,9 +155,12 @@ def render_entry(df_emp, df_kpi, df_data):
     COLORS = ["#DBEAFE","#E0F2FE","#EDE9FE","#FCE7F3","#D1FAE5",
               "#FEF3C7","#FEE2E2","#F0FDF4","#EFF6FF","#FDF4FF"]
 
+    # ── تنبيه طريقة الإدخال ──────────────────────────────────────
+    st.info("📌 **طريقة الإدخال:** أدخل درجة من **0 إلى 100** لكل مؤشر. النظام سيحسب النتيجة = (الدرجة × الوزن) ÷ 100")
+
     # ── مؤشرات الأداء الوظيفي ───────────────────────────────────────
     st.markdown("---")
-    st.markdown("### 🎯 مؤشرات الأداء الوظيفي")
+    st.markdown("### 🎯 مؤشرات الأداء الوظيفي (80%)")
 
     job_grades = {}
     for i, (_, row) in enumerate(job_kpis.iterrows()):
@@ -171,37 +168,42 @@ def render_entry(df_emp, df_kpi, df_data):
         weight = float(row["Weight"])
         bg     = COLORS[i % len(COLORS)]
 
-        col_name, col_inp, col_info = st.columns([4, 1.2, 1.5])
+        col_name, col_inp, col_score, col_lbl = st.columns([3, 1, 1, 1])
         with col_name:
             st.markdown(f"""
             <div style="background:{bg};padding:10px 14px;border-radius:8px;
-                        border-right:4px solid #1E3A8A;height:52px;
+                        border-right:4px solid #1E3A8A;min-height:52px;
                         display:flex;align-items:center;">
                 <b style="font-size:13px;color:#1E3A8A;">{kname}</b>
                 <span style="margin-right:8px;color:#64748B;font-size:11px;">
-                    (الوزن: {weight}%)
+                    (وزن: {weight}%)
                 </span>
             </div>""", unsafe_allow_html=True)
         with col_inp:
-            val = st.number_input("", min_value=0, max_value=int(weight),
-                value=0, step=1, key=f"kpi_{kname}", label_visibility="collapsed")
+            val = st.number_input("الدرجة", min_value=0, max_value=100,
+                value=0, step=1, key=f"kpi_{kname}", label_visibility="visible")
             job_grades[kname] = (weight, val)
-        with col_info:
-            score = calc_kpi_score(val, weight)
-            lbl   = rating_label(score / weight * 100 if weight else 0)
-            clr   = rating_label_color(lbl)
+        with col_score:
+            score_val = (val * weight) / 100
+            st.markdown(f"""
+            <div style="background:#F8FAFC;border:1px solid #CBD5E1;
+                        border-radius:6px;padding:8px 6px;text-align:center;
+                        font-size:13px;font-weight:bold;color:#1E3A8A;margin-top:22px;">
+                {score_val:.1f}/{weight}
+            </div>""", unsafe_allow_html=True)
+        with col_lbl:
+            lbl = rating_label(val)
+            clr = rating_label_color(lbl)
             st.markdown(f"""
             <div style="background:{clr}22;border:1px solid {clr};
-                        border-radius:6px;padding:4px 8px;text-align:center;
-                        font-size:11px;font-weight:bold;color:{clr};">
-                {score:.1f}% — {lbl}
+                        border-radius:6px;padding:8px 6px;text-align:center;
+                        font-size:12px;font-weight:bold;color:{clr};margin-top:22px;">
+                {lbl}
             </div>""", unsafe_allow_html=True)
-
-    job_total = sum(calc_kpi_score(v, w) for w, v in job_grades.values())
 
     # ── مؤشرات الصفات الشخصية ───────────────────────────────────────
     st.markdown("---")
-    st.markdown("### 🌟 مؤشرات الصفات الشخصية")
+    st.markdown("### 🌟 مؤشرات الصفات الشخصية (20%)")
 
     pers_grades = {}
     pers_source = pers_kpis if not pers_kpis.empty else \
@@ -212,32 +214,41 @@ def render_entry(df_emp, df_kpi, df_data):
         weight = float(row["Weight"])
         bg     = COLORS[(i+5) % len(COLORS)]
 
-        col_name2, col_inp2, col_info2 = st.columns([4, 1.2, 1.5])
+        col_name2, col_inp2, col_score2, col_lbl2 = st.columns([3, 1, 1, 1])
         with col_name2:
             st.markdown(f"""
             <div style="background:{bg};padding:10px 14px;border-radius:8px;
-                        border-right:4px solid #ED7D31;height:52px;
+                        border-right:4px solid #ED7D31;min-height:52px;
                         display:flex;align-items:center;">
                 <b style="font-size:13px;color:#92400E;">{kname}</b>
                 <span style="margin-right:8px;color:#64748B;font-size:11px;">
-                    (الوزن: {weight}%)
+                    (وزن: {weight}%)
                 </span>
             </div>""", unsafe_allow_html=True)
         with col_inp2:
-            val2 = st.number_input("", min_value=0, max_value=int(weight),
-                value=0, step=1, key=f"pers_{kname}", label_visibility="collapsed")
+            val2 = st.number_input("الدرجة", min_value=0, max_value=100,
+                value=0, step=1, key=f"pers_{kname}", label_visibility="visible")
             pers_grades[kname] = (weight, val2)
-        with col_info2:
-            lbl2 = rating_label(val2 / weight * 100 if weight else 0)
+        with col_score2:
+            score_val2 = (val2 * weight) / 100
+            st.markdown(f"""
+            <div style="background:#F8FAFC;border:1px solid #CBD5E1;
+                        border-radius:6px;padding:8px 6px;text-align:center;
+                        font-size:13px;font-weight:bold;color:#92400E;margin-top:22px;">
+                {score_val2:.1f}/{weight}
+            </div>""", unsafe_allow_html=True)
+        with col_lbl2:
+            lbl2 = rating_label(val2)
             clr2 = rating_label_color(lbl2)
             st.markdown(f"""
             <div style="background:{clr2}22;border:1px solid {clr2};
-                        border-radius:6px;padding:4px 8px;text-align:center;
-                        font-size:11px;font-weight:bold;color:{clr2};">
-                {val2:.1f}% — {lbl2}
+                        border-radius:6px;padding:8px 6px;text-align:center;
+                        font-size:12px;font-weight:bold;color:{clr2};margin-top:22px;">
+                {lbl2}
             </div>""", unsafe_allow_html=True)
 
-    pers_total  = sum(v for _, v in pers_grades.values())
+    job_total  = sum((v * w) / 100 for w, v in job_grades.values())
+    pers_total = sum((v * w) / 100 for w, v in pers_grades.values())
     grand_total = job_total + pers_total
 
     from calculations import verbal_grade, grade_color_hex
@@ -261,18 +272,18 @@ def render_entry(df_emp, df_kpi, df_data):
     with col_t:
         training = st.text_area("🎓 الاحتياجات التدريبية", key="train_inp", height=80)
 
-    # اسم المقيم المسجّل في البيانات
     rev_name = sel_reviewer if (sel_reviewer != "-- اختر المقيم --") else mgr_name
 
     if st.button("💾 حفظ التقييم", type="primary", use_container_width=True):
         kpi_rows = []
         for kname, (weight, val) in job_grades.items():
-            score = calc_kpi_score(val, weight)
-            lbl   = rating_label(score / weight * 100 if weight else 0)
-            kpi_rows.append((kname, weight, score, lbl))
+            score = (val * weight) / 100
+            lbl   = rating_label(val)
+            kpi_rows.append((kname, weight, round(score, 2), lbl))
         for kname, (weight, val) in pers_grades.items():
-            lbl = rating_label(val / weight * 100 if weight else 0)
-            kpi_rows.append((kname, weight, float(val), lbl))
+            score = (val * weight) / 100
+            lbl   = rating_label(val)
+            kpi_rows.append((kname, weight, round(score, 2), lbl))
 
         ok, err = save_evaluation(
             sel_emp, sel_month, sel_year, rev_name, dept_name,
