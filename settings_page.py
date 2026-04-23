@@ -1,7 +1,6 @@
 import os
 from datetime import datetime, date
 import streamlit as st
-from data_loader import migrate_from_excel
 from constants import LOGO_PATH
 from auth import (hash_pw, load_users, save_users,
                   load_trial_users, save_trial_users,
@@ -50,21 +49,33 @@ def _role_color(role):
 
 
 def render_settings(df_emp, df_kpi, df_data):
-   st.subheader("📤 نقل البيانات من Excel")
-
-if st.button("🔄 تشغيل نقل البيانات (مرة واحدة)", type="primary"):
-    with st.spinner("جاري نقل البيانات من Excel..."):
-        success, msg = migrate_from_excel()
-        if success:
-            st.success(msg)
-            st.balloons()
-            st.rerun()
-        else:
-            st.error(msg)
-  # ── تحقق الصلاحية: admin عادي أو رئيسي ─────────────────────────
+    # ── تحقق الصلاحية: admin عادي أو رئيسي ─────────────────────────
     if not _is_admin():
         st.warning("🔒 هذه الصفحة متاحة للمدير فقط.")
         return
+
+    # ── زر نقل البيانات من Excel ─────────────────────────────────
+    st.subheader("📤 نقل البيانات من Excel")
+    
+    try:
+        from data_loader import migrate_from_excel
+        _migrate_ok = True
+    except ImportError:
+        _migrate_ok = False
+        st.warning("⚠️ وظيفة النقل غير متوفرة")
+    
+    if _migrate_ok:
+        if st.button("🔄 تشغيل نقل البيانات (مرة واحدة)", type="primary"):
+            with st.spinner("جاري نقل البيانات من Excel..."):
+                success, msg = migrate_from_excel()
+                if success:
+                    st.success(msg)
+                    st.balloons()
+                    st.rerun()
+                else:
+                    st.error(msg)
+    
+    st.markdown("---")
 
     USERS      = load_users()
     TRIAL_DATA = load_trial_users()
