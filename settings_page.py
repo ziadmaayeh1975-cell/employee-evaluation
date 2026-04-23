@@ -18,11 +18,9 @@ except ImportError:
     _DB_PANEL_OK = False
 
 try:
-    from employees_module import render_employee_management, render_cv_reports, load_profiles
+    from employees_module import render_employee_management, load_profiles
 except ImportError:
     def render_employee_management(*args, **kwargs):
-        st.warning("ملف employees_module.py غير موجود.")
-    def render_cv_reports(*args, **kwargs):
         st.warning("ملف employees_module.py غير موجود.")
     def load_profiles():
         return []
@@ -83,7 +81,7 @@ def render_settings(df_emp, df_kpi, df_data):
 
     _tabs = ["👥 إدارة المستخدمين", "⏳ المستخدمون التجريبيون",
              "🏢 إعدادات الشركة", "👨‍💼 إدارة الموظفين",
-             "📊 قائمة مؤشرات الأداء", "📋 ملفات الموظفين (CV)"]
+             "📊 قائمة مؤشرات الأداء"]
     if _DB_PANEL_OK:
         _tabs.append("🗄️ قاعدة البيانات")
     _tab_objs   = st.tabs(_tabs)
@@ -92,8 +90,7 @@ def render_settings(df_emp, df_kpi, df_data):
     set_tab3    = _tab_objs[2]
     set_tab4    = _tab_objs[3]
     set_tab_kpi = _tab_objs[4]
-    set_tab5    = _tab_objs[5]
-    set_tab6    = _tab_objs[6] if _DB_PANEL_OK else None
+    set_tab_db  = _tab_objs[5] if _DB_PANEL_OK else None
 
     # ══════════════════════════════════════════════════════════════════
     # تاب 1 — إدارة المستخدمين
@@ -512,7 +509,7 @@ def render_settings(df_emp, df_kpi, df_data):
                 st.rerun()
 
     # ══════════════════════════════════════════════════════════════════
-    # تاب 4 و 5 و 6
+    # تاب 4 و 5
     # ══════════════════════════════════════════════════════════════════
     with set_tab4:
         if _EMP_KPI_OK:
@@ -526,9 +523,6 @@ def render_settings(df_emp, df_kpi, df_data):
         else:
             st.info("employees_kpis_panel.py غير موجود")
 
-    with set_tab5:
-        render_cv_reports(df_emp, df_data, df_kpi, load_app_settings(), LOGO_PATH)
-
-    if _DB_PANEL_OK and set_tab6:
-        with set_tab6:
+    if _DB_PANEL_OK and set_tab_db:
+        with set_tab_db:
             render_db_panel()
