@@ -52,45 +52,20 @@ def render_settings(df_emp, df_kpi, df_data):
         st.warning("🔒 هذه الصفحة متاحة للمدير فقط.")
         return
 
-    # ── زر نقل البيانات من Excel ─────────────────────────────────
-    st.subheader("📤 نقل البيانات من Excel")
-    
-    try:
-        from data_loader import migrate_from_excel
-        _migrate_ok = True
-    except ImportError:
-        _migrate_ok = False
-        st.warning("⚠️ وظيفة النقل غير متوفرة")
-    
-    if _migrate_ok:
-        if st.button("🔄 تشغيل نقل البيانات (مرة واحدة)", type="primary"):
-            with st.spinner("جاري نقل البيانات من Excel..."):
-                success, msg = migrate_from_excel()
-                if success:
-                    st.success(msg)
-                    st.balloons()
-                    st.rerun()
-                else:
-                    st.error(msg)
-    
-    st.markdown("---")
-
     USERS      = load_users()
     TRIAL_DATA = load_trial_users()
     APP_CFG    = load_app_settings()
 
     _tabs = ["👥 إدارة المستخدمين", "⏳ المستخدمون التجريبيون",
              "🏢 إعدادات الشركة", "👨‍💼 إدارة الموظفين",
-             "📊 قائمة مؤشرات الأداء"]
-    if _DB_PANEL_OK:
-        _tabs.append("🗄️ قاعدة البيانات")
+             "📊 قائمة مؤشرات الأداء", "🗄️ قاعدة البيانات"]
     _tab_objs   = st.tabs(_tabs)
     set_tab1    = _tab_objs[0]
     set_tab2    = _tab_objs[1]
     set_tab3    = _tab_objs[2]
     set_tab4    = _tab_objs[3]
     set_tab_kpi = _tab_objs[4]
-    set_tab_db  = _tab_objs[5] if _DB_PANEL_OK else None
+    set_tab_db  = _tab_objs[5]
 
     # ══════════════════════════════════════════════════════════════════
     # تاب 1 — إدارة المستخدمين
@@ -487,42 +462,4 @@ def render_settings(df_emp, df_kpi, df_data):
                                 font-weight:bold;margin:10px 0 4px;direction:rtl;">
                     {_prev_title}</div>
                     <p style="text-align:center;color:#888;font-size:11px;margin:2px 0 12px;">
-                        ↑ معاينة ترويسة التقرير</p>""", unsafe_allow_html=True)
-
-            if st.form_submit_button("💾 حفظ الإعدادات", use_container_width=True):
-                _logo_saved_path = _current_logo
-                if s_logo_file:
-                    with open(LOGO_PATH, "wb") as lf:
-                        lf.write(s_logo_file.getbuffer())
-                    _logo_saved_path = LOGO_PATH
-                    st.success("✅ تم رفع الشعار الجديد.")
-                save_app_settings({
-                    "company_name":   s_company,
-                    "branch_name":    s_branch,
-                    "employee_count": s_emp_cnt,
-                    "contact_phone":  s_phone,
-                    "contact_email":  s_email,
-                    "show_logo":      s_show_logo,
-                    "logo_path":      _logo_saved_path,
-                })
-                st.success("✅ تم حفظ إعدادات الشركة.")
-                st.rerun()
-
-    # ══════════════════════════════════════════════════════════════════
-    # تاب 4 و 5
-    # ══════════════════════════════════════════════════════════════════
-    with set_tab4:
-        if _EMP_KPI_OK:
-            render_employees_panel()
-        else:
-            render_employee_management(df_emp, df_data, df_kpi, load_app_settings(), LOGO_PATH)
-
-    with set_tab_kpi:
-        if _EMP_KPI_OK:
-            render_kpis_panel()
-        else:
-            st.info("employees_kpis_panel.py غير موجود")
-
-    if _DB_PANEL_OK and set_tab_db:
-        with set_tab_db:
-            render_db_panel()
+                        ↑ معاينة ترويسة التقرير</p>""
