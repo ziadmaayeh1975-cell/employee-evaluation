@@ -462,4 +462,78 @@ def render_settings(df_emp, df_kpi, df_data):
                                 font-weight:bold;margin:10px 0 4px;direction:rtl;">
                     {_prev_title}</div>
                     <p style="text-align:center;color:#888;font-size:11px;margin:2px 0 12px;">
-                        ↑ معاينة ترويسة التقرير</p>""
+                        ↑ معاينة ترويسة التقرير</p>""", unsafe_allow_html=True)
+
+            if st.form_submit_button("💾 حفظ الإعدادات", use_container_width=True):
+                _logo_saved_path = _current_logo
+                if s_logo_file:
+                    with open(LOGO_PATH, "wb") as lf:
+                        lf.write(s_logo_file.getbuffer())
+                    _logo_saved_path = LOGO_PATH
+                    st.success("✅ تم رفع الشعار الجديد.")
+                save_app_settings({
+                    "company_name":   s_company,
+                    "branch_name":    s_branch,
+                    "employee_count": s_emp_cnt,
+                    "contact_phone":  s_phone,
+                    "contact_email":  s_email,
+                    "show_logo":      s_show_logo,
+                    "logo_path":      _logo_saved_path,
+                })
+                st.success("✅ تم حفظ إعدادات الشركة.")
+                st.rerun()
+
+    # ══════════════════════════════════════════════════════════════════
+    # تاب 4 و 5
+    # ══════════════════════════════════════════════════════════════════
+    with set_tab4:
+        if _EMP_KPI_OK:
+            render_employees_panel()
+        else:
+            render_employee_management(df_emp, df_data, df_kpi, load_app_settings(), LOGO_PATH)
+
+    with set_tab_kpi:
+        if _EMP_KPI_OK:
+            render_kpis_panel()
+        else:
+            st.info("employees_kpis_panel.py غير موجود")
+
+    # ══════════════════════════════════════════════════════════════════
+    # تاب 6 — قاعدة البيانات (استيراد/تصدير)
+    # ══════════════════════════════════════════════════════════════════
+    with set_tab_db:
+        st.subheader("📤 نقل البيانات من Excel")
+        st.markdown("""
+        يمكنك رفع ملف Excel لاستيراد بيانات الموظفين والمؤشرات إلى قاعدة البيانات.
+        هذا الخيار مثالي لتحديث النظام ببيانات جديدة مرة واحدة أو بشكل دوري.
+        """)
+        
+        uploaded_file = st.file_uploader("📁 اختر ملف Excel (.xlsm أو .xlsx)", type=["xlsm", "xlsx"])
+        if uploaded_file is not None:
+            if st.button("🔄 بدء الاستيراد", type="primary"):
+                with st.spinner("جاري استيراد البيانات..."):
+                    try:
+                        from database_manager import import_from_excel
+                        import tempfile
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+                            tmp.write(uploaded_file.getbuffer())
+                            result = import_from_excel(tmp.name)
+                        os.unlink(tmp.name)
+                        if result.get("success"):
+                            st.success("✅ تم استيراد البيانات بنجاح!")
+                            st.balloons()
+                            st.rerun()
+                        else:
+                            st.error(result.get("message", "فشل الاستيراد"))
+                    except Exception as e:
+                        st.error(f"❌ خطأ: {e}")
+        
+        st.divider()
+        st.subheader("💾 تصدير قاعدة البيانات")
+        if st.button("⬇️ تحميل نسخة Excel من قاعدة البيانات"):
+            try:
+                from database_manager import export_db_to_excel
+                data = export_db_to_excel()
+                st.download_button("📥 اضغط للتحميل", data=data, file_name="database_backup.xlsx", mime="application/vnd.ms-excel")
+            except Exception as e:
+                st.error(f"❌ خطأ: {e}")
