@@ -1,8 +1,9 @@
 import streamlit as st
+import pandas as pd
 from constants import MONTHS_AR, MONTH_MAP, PERSONAL_KPIS, PERSONAL_WEIGHT
 from data_loader import save_evaluation
 from auth import get_current_reviewer, get_current_role
-from calculations import RATING_SCALE, calc_kpi_score, rating_label, rating_label_color
+from calculations import RATING_SCALE, calc_kpi_score, rating_label, rating_label_color, verbal_grade, grade_color_hex
 
 INPUT_CSS = """<style>
 div[data-testid="stNumberInput"] input {
@@ -19,7 +20,7 @@ def render_entry(df_emp, df_kpi, df_data):
     st.subheader("📋 تحديد المقيم والموظف وفترة التقييم")
     st.markdown(INPUT_CSS, unsafe_allow_html=True)
 
-    import pandas as pd
+    # ── تجهيز DataFrame التقييمات ──────────────────────────────────
     if df_data is None or not isinstance(df_data, pd.DataFrame):
         df_data = pd.DataFrame(columns=[
             "EmployeeName","Month","KPI_Name","Weight","KPI_%",
@@ -35,7 +36,12 @@ def render_entry(df_emp, df_kpi, df_data):
     current_reviewer = get_current_reviewer()
     is_super_admin   = (role == "super_admin")
     is_admin         = (role in ("admin", "super_admin"))
-    reviewer_col     = df_emp.columns[3] if len(df_emp.columns) > 3 else df_emp.columns[-1]
+    
+    reviewer_col = "Manager"
+    if "اسم المقيم " in df_emp.columns:
+        reviewer_col = "اسم المقيم "
+    elif "Manager" not in df_emp.columns and len(df_emp.columns) > 3:
+        reviewer_col = df_emp.columns[3]
 
     r1c1, r1c2, r1c3 = st.columns(3)
 
@@ -106,30 +112,26 @@ def render_entry(df_emp, df_kpi, df_data):
     sel_month = st.selectbox("📅 شهر التقييم", MONTHS_AR)
 
     # ── تحقق الاختيار ───────────────────────────────────────────────
-    if not is_super_admin and is_admin and not current_reviewer \
-            and sel_reviewer == "-- اختر المقيم --":
-        st.info("⬆️ اختر المقيم أولاً.")
-        return
     if sel_emp == "-- اختر --":
         st.info("⬆️ اختر الموظف.")
         return
 
     # ── بيانات الموظف ───────────────────────────────────────────────
-    emp_row = df_emp[df_emp["EmployeeName"] == sel_emp]
+    emp_row = df_emp[df_emp["EmployeeName"].astype(str).str.strip() == sel_emp]
     if emp_row.empty:
         st.warning("⚠️ لم يُعثر على بيانات هذا الموظف.")
         return
     emp_row   = emp_row.iloc[0]
-    job_title = str(emp_row.iloc[1]).strip()
-    dept_name = str(emp_row.iloc[2]).strip()
-    mgr_name  = str(emp_row.iloc[3]).strip()
+    job_title = str(emp_row.get("JobTitle", emp_row.iloc[1] if len(emp_row) > 1 else "")).strip()
+    dept_name = str(emp_row.get("Department", emp_row.iloc[2] if len(emp_row) > 2 else "")).strip()
+    mgr_name  = str(emp_row.get("Manager", emp_row.iloc[3] if len(emp_row) > 3 else "")).strip()
 
     # ── تحقق من تكرار التقييم ───────────────────────────────────────
     if not df_data.empty and "EmployeeName" in df_data.columns:
         dup = df_data[
-            (df_data["EmployeeName"] == sel_emp) &
-            (df_data["Month"]        == MONTH_MAP.get(sel_month, sel_month)) &
-            (df_data["Year"]         == int(sel_year))
+            (df_data["EmployeeName"].astype(str).str.strip() == sel_emp) &
+            (df_data["Month"].astype(str).str.strip() == MONTH_MAP.get(sel_month, sel_month)) &
+            (df_data["Year"].astype(int) == int(sel_year))
         ]
         if not dup.empty:
             st.error(f"⚠️ يوجد تقييم محفوظ لـ ({sel_emp}) في {sel_month} {sel_year}.")
@@ -144,6 +146,7 @@ def render_entry(df_emp, df_kpi, df_data):
         <b>👨‍💼 المقيم:</b> {mgr_name}
     </div>""", unsafe_allow_html=True)
 
+    # ── تصفية المؤشرات حسب الوظيفة ──────────────────────────────────
     kpi_rows_raw = df_kpi[df_kpi["JobTitle"].astype(str).str.strip() == job_title]
     if kpi_rows_raw.empty:
         st.warning(f"⚠️ لا توجد مؤشرات KPI لوظيفة '{job_title}'.")
@@ -181,15 +184,15 @@ def render_entry(df_emp, df_kpi, df_data):
             </div>""", unsafe_allow_html=True)
         with col_inp:
             val = st.number_input("الدرجة", min_value=0, max_value=100,
-                value=0, step=1, key=f"kpi_{kname}", label_visibility="visible")
+                value=0, step=1, key=f"job_{i}_{kname[:20]}", label_visibility="visible")
             job_grades[kname] = (weight, val)
         with col_score:
-            score_val = (val * weight) / 100
+            score_val = round((val * weight) / 100, 2)
             st.markdown(f"""
             <div style="background:#F8FAFC;border:1px solid #CBD5E1;
                         border-radius:6px;padding:8px 6px;text-align:center;
                         font-size:13px;font-weight:bold;color:#1E3A8A;margin-top:22px;">
-                {score_val:.1f}/{weight}
+                {score_val}/{weight}
             </div>""", unsafe_allow_html=True)
         with col_lbl:
             lbl = rating_label(val)
@@ -227,15 +230,15 @@ def render_entry(df_emp, df_kpi, df_data):
             </div>""", unsafe_allow_html=True)
         with col_inp2:
             val2 = st.number_input("الدرجة", min_value=0, max_value=100,
-                value=0, step=1, key=f"pers_{kname}", label_visibility="visible")
+                value=0, step=1, key=f"pers_{i}_{kname[:20]}", label_visibility="visible")
             pers_grades[kname] = (weight, val2)
         with col_score2:
-            score_val2 = (val2 * weight) / 100
+            score_val2 = round((val2 * weight) / 100, 2)
             st.markdown(f"""
             <div style="background:#F8FAFC;border:1px solid #CBD5E1;
                         border-radius:6px;padding:8px 6px;text-align:center;
                         font-size:13px;font-weight:bold;color:#92400E;margin-top:22px;">
-                {score_val2:.1f}/{weight}
+                {score_val2}/{weight}
             </div>""", unsafe_allow_html=True)
         with col_lbl2:
             lbl2 = rating_label(val2)
@@ -247,11 +250,11 @@ def render_entry(df_emp, df_kpi, df_data):
                 {lbl2}
             </div>""", unsafe_allow_html=True)
 
-    job_total  = sum((v * w) / 100 for w, v in job_grades.values())
-    pers_total = sum((v * w) / 100 for w, v in pers_grades.values())
-    grand_total = job_total + pers_total
+    # ── حساب المجاميع ───────────────────────────────────────────────
+    job_total  = round(sum((v * w) / 100 for w, v in job_grades.values()), 2)
+    pers_total = round(sum((v * w) / 100 for w, v in pers_grades.values()), 2)
+    grand_total = round(job_total + pers_total, 2)
 
-    from calculations import verbal_grade, grade_color_hex
     verb = verbal_grade(grand_total)
     clr  = grade_color_hex(grand_total)
 
@@ -259,9 +262,9 @@ def render_entry(df_emp, df_kpi, df_data):
     <div style="background:white;border:2px solid #1E3A8A;border-radius:12px;
                 padding:16px;text-align:center;margin:16px 0;">
         <div style="font-size:12px;color:#64748B;margin-bottom:4px;">
-            إجمالي النتيجة (وظيفي {job_total:.1f}% + شخصية {pers_total:.1f}%)
+            إجمالي النتيجة (وظيفي {job_total}% + شخصية {pers_total}%)
         </div>
-        <div style="font-size:2.5rem;font-weight:bold;color:{clr};">{grand_total:.1f}%</div>
+        <div style="font-size:2.5rem;font-weight:bold;color:{clr};">{grand_total}%</div>
         <div style="font-size:1rem;color:{clr};font-weight:600;">{verb}</div>
     </div>""", unsafe_allow_html=True)
 
@@ -276,24 +279,29 @@ def render_entry(df_emp, df_kpi, df_data):
 
     if st.button("💾 حفظ التقييم", type="primary", use_container_width=True):
         kpi_rows = []
+        
+        # ── تجهيز صفوف المؤشرات الوظيفية ──────────────────────────
         for kname, (weight, val) in job_grades.items():
-            score = (val * weight) / 100
+            score = round((val * weight) / 100, 2)
             lbl   = rating_label(val)
-            kpi_rows.append((kname, weight, round(score, 2), lbl))
+            kpi_rows.append((kname, weight, score, lbl))
+            
+        # ── تجهيز صفوف الصفات الشخصية ──────────────────────────────
         for kname, (weight, val) in pers_grades.items():
-            score = (val * weight) / 100
+            score = round((val * weight) / 100, 2)
             lbl   = rating_label(val)
-            kpi_rows.append((kname, weight, round(score, 2), lbl))
+            kpi_rows.append((kname, weight, score, lbl))
 
-        ok, err = save_evaluation(
-            sel_emp, sel_month, sel_year, rev_name, dept_name,
-            kpi_rows, notes, training
-        )
-        if ok:
-            st.success(f"✅ تم حفظ تقييم {sel_emp} لشهر {sel_month} {sel_year} بنجاح!")
-            st.cache_data.clear()
-            st.rerun()
-        else:
-            st.error(f"❌ فشل الحفظ: {err}")
-
-import pandas as pd
+        try:
+            ok, err = save_evaluation(
+                sel_emp, sel_month, sel_year, rev_name, dept_name,
+                kpi_rows, notes, training
+            )
+            if ok:
+                st.success(f"✅ تم حفظ تقييم {sel_emp} لشهر {sel_month} {sel_year} بنجاح!")
+                st.cache_data.clear()
+                st.rerun()
+            else:
+                st.error(f"❌ فشل الحفظ: {err}")
+        except Exception as e:
+            st.error(f"❌ خطأ غير متوقع: {str(e)}")
