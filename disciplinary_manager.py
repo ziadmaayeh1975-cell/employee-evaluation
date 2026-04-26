@@ -35,6 +35,7 @@ def load_actions():
 
 def save_actions(actions):
     """حفظ الإجراءات التأديبية"""
+    _ensure_file()
     with open(DISCIPLINARY_DB, "w", encoding="utf-8") as f:
         json.dump(actions, f, ensure_ascii=False, indent=2)
 
@@ -54,6 +55,11 @@ def get_actions_by_employee(emp_name, year=None, month=None):
     
     return sorted(result, key=lambda x: x.get("action_date", ""), reverse=True)
 
+def get_actions_by_month(year, month):
+    """جلب جميع الإجراءات لشهر وسنة محددين"""
+    actions = load_actions()
+    return [a for a in actions if a.get("year") == year and a.get("month") == month]
+
 def get_actions_summary(emp_name, year=None):
     """ملخص الإجراءات لنص التقرير"""
     actions = get_actions_by_employee(emp_name, year)
@@ -65,12 +71,37 @@ def get_actions_summary(emp_name, year=None):
         lines.append(f"• {a.get('action_date', '')}: {a.get('warning_type', '')} - {a.get('reason', '')}")
     return "\n".join(lines)
 
+def get_statistics():
+    """إحصائيات سريعة للإجراءات"""
+    actions = load_actions()
+    total = len(actions)
+    unique_emps = len(set(a.get("employee_name", "") for a in actions))
+    
+    # إجراءات الشهر الحالي
+    now = datetime.now()
+    current_month_actions = [a for a in actions if a.get("year") == now.year and a.get("month") == now.month]
+    
+    return {
+        "total": total,
+        "unique_employees": unique_emps,
+        "current_month": len(current_month_actions)
+    }
+
 # ═══════════════════════════════════════════════════════════════════
 # دوال الإضافة والتعديل والحذف
 # ═══════════════════════════════════════════════════════════════════
 def add_action(emp_name, emp_id, action_date, warning_type, reason, deduction_days):
-    """إضافة إجراء تأديبي جديد"""
+    """إضافة إجراء تأديبي جديد (مع منع التكرار التام)"""
     actions = load_actions()
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # منع التكرار: نفس الموظف + نفس التاريخ + نفس نوع الإنذار
+    # ═══════════════════════════════════════════════════════════════════
+    for existing in actions:
+        if (existing.get("employee_name") == emp_name and
+            existing.get("action_date") == action_date and
+            existing.get("warning_type") == warning_type):
+            return None  # موجود مسبقاً، لا نضيف
     
     # حساب ID جديد
     new_id = max([a.get("id", 0) for a in actions]) + 1 if actions else 1
@@ -118,11 +149,20 @@ def delete_action(action_id):
     save_actions(actions)
     return True
 
+def clear_all_actions():
+    """مسح جميع الإجراءات (استخدام بحذر)"""
+    save_actions([])
+    return True
+
 # ═══════════════════════════════════════════════════════════════════
-# استيراد من Excel
+# استيراد من Excel (ذكي: لا يكرر، يضيف فقط الجديد)
 # ═══════════════════════════════════════════════════════════════════
-def import_from_excel(uploaded_file):
-    """استيراد الإجراءات من ملف Excel"""
+def import_from_excel(uploaded_file, clear_old=False):
+    """
+    استيراد الإجراءات من ملف Excel
+    - clear_old = True: يمسح الإجراءات القديمة قبل الاستيراد
+    - clear_old = False: يضيف الإجراءات الجديدة فقط (بدون تكرار)
+    """
     try:
         df = pd.read_excel(uploaded_file, engine="openpyxl")
         df.columns = [str(c).strip() for c in df.columns]
@@ -141,6 +181,12 @@ def import_from_excel(uploaded_file):
             if old in df.columns:
                 df.rename(columns={old: new}, inplace=True)
         
+        # التحقق من وجود الأعمدة المطلوبة
+        required = ["employee_name", "action_date", "warning_type"]
+        missing = [r for r in required if r not in df.columns]
+        if missing:
+            return False, f"⚠️ الأعمدة المطلوبة غير موجودة: {missing}"
+        
         # تحويل التاريخ
         df["action_date"] = pd.to_datetime(df["action_date"]).dt.strftime("%Y-%m-%d")
         
@@ -149,22 +195,57 @@ def import_from_excel(uploaded_file):
         df["warning_type"] = df["warning_type"].astype(str).str.strip()
         df["reason"] = df["reason"].astype(str).str.strip()
         df["deduction_days"] = pd.to_numeric(df["deduction_days"], errors="coerce").fillna(0).astype(int)
-        df["employee_id"] = df["employee_id"].astype(str).str.strip()
         
-        # حفظ البيانات
+        if "employee_id" in df.columns:
+            df["employee_id"] = df["employee_id"].astype(str).str.strip()
+        else:
+            df["employee_id"] = ""
+        
+        # إذا طلب المستخدم مسح القديم
+        if clear_old:
+            save_actions([])
+            existing_actions = []
+        else:
+            # جلب الإجراءات الموجودة حالياً (لتجنب التكرار)
+            existing_actions = load_actions()
+        
+        # بناء مجموعة من المفاتيح الفريدة للإجراءات الموجودة
+        existing_keys = {(a.get("employee_name", ""), a.get("action_date", ""), a.get("warning_type", "")) 
+                         for a in existing_actions}
+        
         imported_count = 0
-        for _, row in df.iterrows():
-            add_action(
-                emp_name=row["employee_name"],
-                emp_id=row.get("employee_id", ""),
-                action_date=row["action_date"],
-                warning_type=row["warning_type"],
-                reason=row["reason"],
-                deduction_days=int(row["deduction_days"])
-            )
-            imported_count += 1
+        skipped_count = 0
         
-        return True, f"✅ تم استيراد {imported_count} إجراء تأديبي"
+        for _, row in df.iterrows():
+            emp_name = row["employee_name"]
+            action_date = row["action_date"]
+            warning_type = row["warning_type"]
+            
+            # المفتاح الفريد لهذا الإجراء
+            key = (emp_name, action_date, warning_type)
+            
+            # فقط إذا لم يكن موجوداً مسبقاً
+            if key not in existing_keys:
+                add_action(
+                    emp_name=emp_name,
+                    emp_id=row.get("employee_id", ""),
+                    action_date=action_date,
+                    warning_type=warning_type,
+                    reason=row.get("reason", ""),
+                    deduction_days=int(row.get("deduction_days", 0))
+                )
+                imported_count += 1
+                # إضافة المفتاح الجديد لتجنب التكرار داخل نفس الملف
+                existing_keys.add(key)
+            else:
+                skipped_count += 1
+        
+        if imported_count == 0 and skipped_count > 0:
+            return True, f"✅ لا توجد إجراءات جديدة للاستيراد (تخطي {skipped_count} إجراء مكرر)"
+        elif imported_count > 0 and skipped_count > 0:
+            return True, f"✅ تم استيراد {imported_count} إجراء جديد (تخطي {skipped_count} مكرر)"
+        else:
+            return True, f"✅ تم استيراد {imported_count} إجراء تأديبي"
     
     except Exception as e:
         return False, f"❌ خطأ: {str(e)}"
@@ -172,28 +253,54 @@ def import_from_excel(uploaded_file):
 # ═══════════════════════════════════════════════════════════════════
 # تصدير إلى Excel
 # ═══════════════════════════════════════════════════════════════════
-def export_to_excel():
-    """تصدير جميع الإجراءات إلى Excel"""
+def export_to_excel(year=None, month=None):
+    """
+    تصدير الإجراءات إلى Excel
+    - year, month: للتصدير حسب الشهر
+    """
     import io
     actions = load_actions()
-    df = pd.DataFrame(actions)
+    
+    # فلترة حسب الشهر والسنة إذا طلب
+    if year and month:
+        actions = [a for a in actions if a.get("year") == year and a.get("month") == month]
+    elif year:
+        actions = [a for a in actions if a.get("year") == year]
     
     # اختيار الأعمدة المطلوبة
     columns = ["employee_name", "employee_id", "action_date", "warning_type", "reason", "deduction_days"]
-    available = [c for c in columns if c in df.columns]
+    available = [c for c in columns if any(c in a for a in actions)]
+    
+    df = pd.DataFrame(actions)
     
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df[available].to_excel(writer, sheet_name="الإجراءات التأديبية", index=False)
+        if not df.empty:
+            available_cols = [c for c in columns if c in df.columns]
+            df[available_cols].to_excel(writer, sheet_name="الإجراءات التأديبية", index=False)
+        else:
+            pd.DataFrame(columns=columns).to_excel(writer, sheet_name="الإجراءات التأديبية", index=False)
     
     buf.seek(0)
     return buf
 
 # ═══════════════════════════════════════════════════════════════════
-# دوال الحصول على الأسماء للموجهات
+# دوال الحصول على الأسماء للواجهات
 # ═══════════════════════════════════════════════════════════════════
 def get_all_employee_names(df_emp):
     """جلب جميع أسماء الموظفين من قاعدة البيانات الرئيسية"""
     if df_emp is not None and not df_emp.empty:
         return sorted(df_emp["EmployeeName"].dropna().astype(str).str.strip().tolist())
     return []
+
+def get_unique_years():
+    """جلب السنوات الموجودة في الإجراءات"""
+    actions = load_actions()
+    years = sorted(set(a.get("year") for a in actions if a.get("year")))
+    return years
+
+def get_months_with_actions(year):
+    """جلب الأشهر التي توجد بها إجراءات لسنة معينة"""
+    actions = load_actions()
+    months = sorted(set(a.get("month") for a in actions if a.get("year") == year))
+    return months
