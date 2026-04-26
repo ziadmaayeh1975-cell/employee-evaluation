@@ -14,6 +14,13 @@ from data_loader import get_emp_notes
 from auth import get_current_reviewer, get_current_role
 from report_export import build_employee_sheet, print_preview_html
 
+# استيراد دوال الإجراءات التأديبية
+try:
+    from disciplinary_loader import load_disciplinary_actions, get_employee_disciplinary, format_disciplinary_text
+    DISCIPLINARY_AVAILABLE = True
+except ImportError:
+    DISCIPLINARY_AVAILABLE = False
+
 def _reviewer_emp_set(df_emp):
     """
     None  = كل الموظفين (super_admin)
@@ -201,6 +208,18 @@ def render_employee_report(df_emp, df_kpi, df_data):
         notes2    = _fb[0] if len(_fb) > 0 else ""
         training2 = _fb[1] if len(_fb) > 1 else ""
 
+    # ═══════════════════════════════════════════════════════════════════
+    # 🔍 تحميل الإجراءات التأديبية للموظف
+    # ═══════════════════════════════════════════════════════════════════
+    disciplinary_df = None
+    if DISCIPLINARY_AVAILABLE:
+        try:
+            df_disc = load_disciplinary_actions()
+            if not df_disc.empty:
+                disciplinary_df = get_employee_disciplinary(df_disc, sel2, sel2_year)
+        except Exception as e:
+            st.warning(f"⚠️ خطأ في تحميل الإجراءات التأديبية: {e}")
+
     st.markdown(f"""
     <div style="background:#F8FAFC;border:1px solid #CBD5E1;border-radius:12px;
                 padding:16px;margin-bottom:10px;direction:rtl;">
@@ -283,6 +302,27 @@ def render_employee_report(df_emp, df_kpi, df_data):
                     for k,w,g in pers_kpis_show
                 ]), hide_index=True, use_container_width=True)
 
+        # ═══════════════════════════════════════════════════════════════════
+        # ⚠️ عرض الإجراءات التأديبية في واجهة Streamlit
+        # ═══════════════════════════════════════════════════════════════════
+        if disciplinary_df is not None and not disciplinary_df.empty:
+            st.markdown("---")
+            st.markdown("#### ⚠️ سجل الإجراءات التأديبية")
+            
+            # عرض جدول الإجراءات
+            display_df = disciplinary_df.copy()
+            display_df = display_df.rename(columns={
+                "warning_date": "التاريخ",
+                "warning_type": "نوع الإنذار",
+                "reason": "السبب",
+                "deduction_days": "خصم (أيام)"
+            })
+            
+            cols_to_show = ["التاريخ", "نوع الإنذار", "السبب", "خصم (أيام)"]
+            available_cols = [c for c in cols_to_show if c in display_df.columns]
+            
+            st.dataframe(display_df[available_cols], hide_index=True, use_container_width=True)
+
         if notes2 or training2:
             cn, ct = st.columns(2)
             with cn:
@@ -325,8 +365,14 @@ def render_employee_report(df_emp, df_kpi, df_data):
     st.subheader("⬇️ تحميل نموذج التقييم النهائي")
     wb2 = openpyxl.Workbook()
     wb2.remove(wb2.active)
-    build_employee_sheet(wb2, sel2, job2, dept2, mgr2, sel2_year,
-                         kpis2, monthly_rep, notes2, training2)
+    
+    # تمرير الإجراءات التأديبية إلى دالة build_employee_sheet
+    build_employee_sheet(
+        wb2, sel2, job2, dept2, mgr2, sel2_year,
+        kpis2, monthly_rep, notes2, training2,
+        disciplinary_actions=disciplinary_df  # إضافة الإجراءات التأديبية
+    )
+    
     buf2 = io.BytesIO()
     wb2.save(buf2)
     buf2.seek(0)
