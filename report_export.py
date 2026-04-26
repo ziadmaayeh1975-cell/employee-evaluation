@@ -57,12 +57,14 @@ def _mc(ws, r1, c1, r2, c2, val=None, **kw):
 
 
 # ══════════════════════════════════════════════════════════════════════
-# تقرير الموظف الفردي — مطابق للصورة
+# تقرير الموظف الفردي — مع إضافة الإجراءات التأديبية
 # ══════════════════════════════════════════════════════════════════════
 def build_employee_sheet(wb, emp_name, job_title, dept, manager, year,
-                         kpis, monthly_scores, notes="", training="", chart_img=None):
+                         kpis, monthly_scores, notes="", training="", chart_img=None,
+                         disciplinary_actions=None):
     """
     monthly_scores: (idx, short, score) أو (idx, short, score, date, notes, train)
+    disciplinary_actions: DataFrame أو قائمة تحتوي على الإجراءات التأديبية للموظف
     """
     import os as _os
     from openpyxl.drawing.image import Image as XLImg
@@ -90,6 +92,7 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year,
     TRAIN_BG= "F3E5F5"   # بنفسجي فاتح — تدريب
     DATE_BG = "E3F2FD"   # أزرق فاتح جداً — تاريخ
     INFO_BG = "EBF3FB"   # أزرق فاتح — قيم المعلومات
+    DISC_BG = "FEE2E2"   # أحمر فاتح جداً — الإجراءات التأديبية
 
     # ── حدود ──────────────────────────────────────────────────────────
     _med = Side(style="medium", color="000000")
@@ -159,40 +162,29 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year,
     if _branch: _header += f" — {_branch}"
 
     # ════════════════════════════════════════════════════════════════════
-    # تخطيط الأعمدة (مطابق للصورة):
-    #  A  = تسميات المعلومات + مؤشرات KPI (نص طويل)
-    #  B  = قيم المعلومات + وزن KPI
-    #  C  = درجة KPI
-    #  D  = فاصل
-    #  E  = الشهر
-    #  F  = الدرجة الشهرية
-    #  G  = تاريخ التقييم
-    #  H  = ملاحظات المقيم
-    #  I  = الاحتياجات التدريبية
+    # تخطيط الأعمدة
     # ════════════════════════════════════════════════════════════════════
-    # العرض يُضبط تلقائياً في النهاية حسب المحتوى (auto_fit)
-    ws.column_dimensions["B"].width = 7    # الوزن %
-    ws.column_dimensions["C"].width = 9    # الدرجة (0-100)
-    ws.column_dimensions["D"].width = 10   # التقييم اللفظي
-    ws.column_dimensions["E"].width = 3    # فاصل بين الجدولين
-    ws.column_dimensions["F"].width = 9    # الشهر
-    ws.column_dimensions["G"].width = 8    # الدرجة الشهرية
-    ws.column_dimensions["H"].width = 12   # التقييم اللفظي الشهري
-    ws.column_dimensions["I"].width = 12   # التاريخ
-    ws.column_dimensions["J"].width = 20   # ملاحظات
-    ws.column_dimensions["K"].width = 0    # مخفي
+    ws.column_dimensions["B"].width = 7
+    ws.column_dimensions["C"].width = 9
+    ws.column_dimensions["D"].width = 10
+    ws.column_dimensions["E"].width = 3
+    ws.column_dimensions["F"].width = 9
+    ws.column_dimensions["G"].width = 8
+    ws.column_dimensions["H"].width = 12
+    ws.column_dimensions["I"].width = 12
+    ws.column_dimensions["J"].width = 20
+    ws.column_dimensions["K"].width = 0
     ws.column_dimensions["K"].hidden = True
 
     r = 1
 
     # ════════════════════════════════════════════════════════════════════
-    # صف 1: ترويسة كاملة A→I
+    # صف 1: ترويسة
     # ════════════════════════════════════════════════════════════════════
     ws.row_dimensions[1].height = 32
     mc(1,1,1,9, _header,
        bold=True, sz=11, color="FFFFFF", bg=DARK, ah="center", brd="bk")
 
-    # لوغو يمين الترويسة
     _logo = globals().get("LOGO_PATH","logo.png")
     if _logo and _os.path.exists(_logo):
         try:
@@ -204,9 +196,7 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year,
     r = 2
 
     # ════════════════════════════════════════════════════════════════════
-    # صف 2: رأس جدول الأشهر + أول صف معلومات الموظف
-    # الأشهر تبدأ من الصف 2 في الأعمدة E→I
-    # معلومات الموظف في A+B صفوف 2→7
+    # معلومات الموظف + رأس جدول الأشهر
     # ════════════════════════════════════════════════════════════════════
     INFO = [
         ("اسم الموظف",    emp_name),
@@ -217,42 +207,34 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year,
         ("تاريخ التقييم", date.today().strftime("%d/%m/%Y")),
     ]
 
-    # رأس جدول الأشهر — صف 2
     ws.row_dimensions[2].height = 16
     mc(2,6,2,9,"نتيجة التقييم الشهري",
        bold=True, sz=SZ, color="FFFFFF", bg=MID, ah="center", brd="bk")
 
-    # رؤوس أعمدة الأشهر — صف 3
     ws.row_dimensions[3].height = 16
     sc(ws.cell(3,6,"الشهر"),               bold=True,sz=SZ,color="FFFFFF",bg=DARK,ah="center",brd="bk")
     sc(ws.cell(3,7,"الدرجة"),              bold=True,sz=SZ,color="FFFFFF",bg=DARK,ah="center",brd="bk")
     sc(ws.cell(3,8,"التقييم اللفظي"),      bold=True,sz=8, color="FFFFFF",bg=DARK,ah="center",brd="bk")
     sc(ws.cell(3,9,"تاريخ التقييم"),       bold=True,sz=8, color="FFFFFF",bg=DARK,ah="center",brd="bk")
     sc(ws.cell(3,10,"ملاحظات المقيم"),     bold=True,sz=8, color="FFFFFF",bg=DARK,ah="center",brd="bk")
-    # عمود I محذوف من الجدول الجانبي
 
-    # معلومات الموظف في A+B (صفوف 2→7)
-    # B2:B7 = Bold + ضبط ذكي للعرض حسب أطول قيمة
     _info_max_len = max((len(str(v)) for _, v in INFO), default=10)
-    # عامل 0.6 للعربية + هامش = عرض يضمن ظهور النص كاملاً
     ws.column_dimensions["B"].width = min(max(_info_max_len * 0.6 + 3, 14), 35)
 
     for i, (lbl, val) in enumerate(INFO):
         row = r + i
-        ws.row_dimensions[row].height = 18   # زيادة قليلاً
+        ws.row_dimensions[row].height = 18
         sc(ws.cell(row,1,lbl), bold=True,  sz=SZ, color="FFFFFF", bg=DARK, ah="center", brd="bk")
         sc(ws.cell(row,2,val), bold=True,  sz=SZ, color="000000", bg=INFO_BG, ah="right", brd="tn")
 
-    r += len(INFO)  # r = 8
+    r += len(INFO)
 
     # ════════════════════════════════════════════════════════════════════
-    # صفوف 4-15: بيانات الأشهر الـ12 في E→I
-    # الارتفاع موحّد 16 لكل الصفوف بلا استثناء (يحل مشكلة الصف 9)
+    # بيانات الأشهر الـ12
     # ════════════════════════════════════════════════════════════════════
     MONTHS_LIST = ["Jan","Feb","Mar","Apr","May","Jun",
                    "Jul","Aug","Sep","Oct","Nov","Dec"]
     for i, short in enumerate(MONTHS_LIST, start=4):
-        # ارتفاع أساسي 20 — يضمن رؤية النص مع wrap
         ws.row_dimensions[i].height = 20
 
         score  = float(m_score.get(short,0) or 0)*100
@@ -286,7 +268,7 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year,
             ws.row_dimensions[i].height = max(20, _lines * 14)
 
     # ════════════════════════════════════════════════════════════════════
-    # صف 8: نتيجة التقييم السنوي
+    # نتيجة التقييم السنوي
     # ════════════════════════════════════════════════════════════════════
     ws.row_dimensions[r].height = 18
     sc(ws.cell(r,1,"نتيجة التقييم السنوي"),
@@ -294,15 +276,10 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year,
     mc(r,2,r,3, f"{int(round(pct))}%  —  {verb}",
        bold=True, sz=SZ, color=sc_c, bg=sbg, ah="center", brd="bk")
     r += 1
-    # لا فاصل هنا — الصف 9 يُستخدم لبيانات الأشهر (يونيو)
-    # الفاصل لا يُضاف لأنه سيُلغي ارتفاع الصف
 
     # ════════════════════════════════════════════════════════════════════
     # مؤشرات الأداء الوظيفي
-    # دمج خلايا العمود A لإظهار النص الطويل كاملاً (كما في الصورة)
     # ════════════════════════════════════════════════════════════════════
-    ws.row_dimensions[r].height = 16
-    # رأس جدول الأداء الوظيفي: A=المؤشر B=الوزن C=الدرجة(0-100) D=التقييم
     ws.row_dimensions[r].height = 16
     sc(ws.cell(r,1,"مؤشرات الأداء الوظيفي"),
        bold=True, sz=SZ, color="FFFFFF", bg=DARK, ah="right", brd="bk")
@@ -318,7 +295,6 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year,
         w    = float(weight)
         pct  = round(kpi_score_to_pct(g, w), 1)
         lbl  = rating_label(pct)
-        # الدرجة الفعلية من الوزن الحقيقي
         actual = round(g, 2)
         _job_total_score += actual
         kbg  = GREEN_BG if pct>=80 else (YELLOW if pct>=60 else (RED_BG if pct>0 else rbg))
@@ -356,21 +332,17 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year,
        bold=True, sz=SZ, color="FFFFFF", bg=ORANGE, ah="center", brd="bk")
     r += 1
     ws.row_dimensions[r].height = 16
-    # رأس جدول الصفات الشخصية: A=المؤشر B=الوزن C=الدرجة(0-100) D=التقييم
-    ws.row_dimensions[r].height = 16
     sc(ws.cell(r,1,"المؤشر"),           bold=True, sz=SZ, color="FFFFFF", bg=MID, ah="right",  brd="bk")
     sc(ws.cell(r,2,"الوزن النسبي %"),  bold=True, sz=SZ, color="FFFFFF", bg=MID, ah="center", brd="bk")
     sc(ws.cell(r,3,"الدرجة (0-100)"),  bold=True, sz=SZ, color="FFFFFF", bg=MID, ah="center", brd="bk")
     sc(ws.cell(r,4,"التقييم"),          bold=True, sz=SZ, color="FFFFFF", bg=MID, ah="center", brd="bk")
     r += 1
 
-    # الوزن لكل صفة = 20% ÷ عدد الصفات
-    _per_unit_w = round(20.0 / len(per_kpis), 2) if per_kpis else 4.0
     _per_total_score = 0.0
     for i,(kname,weight,grade) in enumerate(per_kpis):
         rbg  = WARM if i%2==0 else WHITE
         g    = float(grade)
-        w    = float(weight)   # الوزن الحقيقي المحفوظ في قاعدة البيانات
+        w    = float(weight)
         pct  = round(kpi_score_to_pct(g, w), 1)
         lbl  = rating_label(pct)
         actual = round(g, 2)
@@ -403,7 +375,7 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year,
     ws.row_dimensions[r].height = 3; r += 1
 
     # ════════════════════════════════════════════════════════════════════
-    # ملاحظات المقيم — يمتد A→C (نفس عرض جدول KPI)
+    # ملاحظات المقيم
     # ════════════════════════════════════════════════════════════════════
     ws.row_dimensions[r].height = 22
     mc(r,1,r,3, f"ملاحظات المقيم: {notes or ''}",
@@ -411,8 +383,7 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year,
        ah="right", av="center", brd="bk", wrap=True)
     r += 1
 
-    # الاحتياجات التدريبية — تُسحب من m_train (مدخلات الأشهر) أولاً
-    # ثم من training (المُمرَّر للدالة) ثم القيمة الافتراضية
+    # الاحتياجات التدريبية
     _train_vals = [v for v in m_train.values() if v and str(v).strip() not in ("","nan","None","—")]
     _train = (
         _train_vals[0] if _train_vals
@@ -428,17 +399,62 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year,
     ws.row_dimensions[r].height = 3; r += 1
 
     # ════════════════════════════════════════════════════════════════════
-    # التوقيع — حدود سوداء قوية على اسم الموظف وخانة التوقيع
+    # ⚠️ الإجراءات التأديبية (جديدة)
+    # ════════════════════════════════════════════════════════════════════
+    if disciplinary_actions is not None and not disciplinary_actions.empty:
+        ws.row_dimensions[r].height = 18
+        mc(r, 1, r, 4, "⚠️ الإجراءات التأديبية المسجلة",
+           bold=True, sz=SZ, color="FFFFFF", bg="B91C1C", ah="center", brd="bk")
+        r += 1
+        
+        # رأس جدول الإجراءات
+        ws.row_dimensions[r].height = 14
+        for ci, hdr in enumerate(["التاريخ", "نوع الإنذار", "السبب", "خصم (أيام)"], 1):
+            sc(ws.cell(r, ci, hdr), bold=True, sz=8, color="FFFFFF",
+               bg="7F1D1D", ah="center", brd="inner")
+        r += 1
+        
+        # بيانات الإجراءات
+        for idx, (_, row_disc) in enumerate(disciplinary_actions.iterrows()):
+            ws.row_dimensions[r].height = 14
+            rbg = DISC_BG if idx % 2 == 0 else "FFFFFF"
+            
+            warning_date = row_disc.get("warning_date", "")
+            warning_type = row_disc.get("warning_type", "")
+            reason = row_disc.get("reason", "")
+            deduction = row_disc.get("deduction_days", 0)
+            
+            # تحويل التاريخ إلى نص
+            if hasattr(warning_date, 'strftime'):
+                date_str = warning_date.strftime("%Y-%m-%d")
+            else:
+                date_str = str(warning_date)
+            
+            sc(ws.cell(r, 1, date_str),
+               bold=False, sz=8, bg=rbg, ah="center", brd="inner")
+            sc(ws.cell(r, 2, str(warning_type)),
+               bold=False, sz=8, bg=rbg, ah="center", brd="inner")
+            sc(ws.cell(r, 3, str(reason)),
+               bold=False, sz=8, bg=rbg, ah="right", brd="inner", wrap=True)
+            sc(ws.cell(r, 4, str(deduction)),
+               bold=False, sz=8, bg=rbg, ah="center", brd="inner")
+            r += 1
+        
+        ws.row_dimensions[r].height = 3
+        r += 1
+
+    # ════════════════════════════════════════════════════════════════════
+    # التوقيع
     # ════════════════════════════════════════════════════════════════════
     ws.row_dimensions[r].height = 18
     sc(ws.cell(r,1, f"المسؤول المباشر: {manager}"),
        bold=True, sz=SZ, ah="center", brd="bk")
     sc(ws.cell(r,2,"اسم الموظف"), bold=True, sz=SZ, ah="center", brd="bk")
-    # حدود سوداء سميكة على خلية اسم الموظف
     _ec = ws.cell(r,3,emp_name)
     sc(_ec, bold=True, sz=SZ, ah="right", brd="bk")
     _ec.border = Border(left=_med, right=_med, top=_med, bottom=_med)
     r += 1
+    
     ws.row_dimensions[r].height = 18
     _t1 = ws.cell(r,1,"التوقيع: _______________")
     sc(_t1, bold=True, sz=SZ, bg=LGRAY, ah="center", brd="bk")
@@ -449,63 +465,50 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year,
     _t2.border = Border(left=_med, right=_med, top=_med, bottom=_med)
 
     # ════════════════════════════════════════════════════════════════════
-    # إعداد الصفحة — Landscape A4 — ضبط ذكي متوائم من الجهات الأربع
+    # إعداد الصفحة
     # ════════════════════════════════════════════════════════════════════
-    # ── إدراج الرسم البياني أسفل جدول الأشهر (E16) ───────────
     if chart_img:
         try:
             import io as _io
             from openpyxl.drawing.image import Image as _ChartImg
             _cbuf = _io.BytesIO(chart_img)
             _cimg = _ChartImg(_cbuf)
-            # الحجم الأصلي 14×7cm مُصغَّر 70% = 9.8×4.9cm
-            _W_CM = 9.8   # عرض
-            _H_CM = 4.9   # ارتفاع
-            _PX   = 37.795  # بكسل لكل سم
+            _W_CM = 9.8
+            _H_CM = 4.9
+            _PX   = 37.795
             _cimg.width  = int(_W_CM * _PX)
             _cimg.height = int(_H_CM * _PX)
-            # الموضع: E16 — أسفل جدول الأشهر مباشرة (صفوف 2-15)
             _cimg.anchor = "E16"
             ws.add_image(_cimg)
         except Exception as _ce:
             pass
 
     ws.page_setup.orientation = "landscape"
-    ws.page_setup.paperSize   = 9          # A4
-    # fitToPage=True مع fitToWidth=1 fitToHeight=1 = يضغط على صفحة واحدة
+    ws.page_setup.paperSize   = 9
     ws.page_setup.fitToPage   = True
     ws.page_setup.fitToWidth  = 1
     ws.page_setup.fitToHeight = 1
     ws.sheet_properties.pageSetUpPr.fitToPage = True
-    # هوامش A4 Landscape متساوية → توسيط فعلي من الجهات الأربع
-    # بوصة: A4 Landscape = 11.69" × 8.27"
-    # هامش 0.5" من كل جهة = يبقى 10.69" × 7.27" للمحتوى
     ws.page_margins = PageMargins(
         left=0.5, right=0.5, top=0.5, bottom=0.5,
         header=0.0, footer=0.0
     )
-    # توسيط التقرير أفقياً ورأسياً داخل الصفحة
     ws.print_options.horizontalCentered = True
     ws.print_options.verticalCentered   = True
 
-    # ── ضبط إجباري للصفوف 2→33: ارتفاع لا يقل عن 20 ────────────────────
-    # يشمل: صفوف المعلومات + صفوف الأشهر + بعض صفوف KPI
-    for _rn in range(2, 34):
+    # ── ضبط إجباري للصفوف ──────────────────────────────────────────────
+    for _rn in range(2, 50):
         _cur = ws.row_dimensions[_rn].height
         if _cur is None or _cur < 20:
             ws.row_dimensions[_rn].height = 20
 
-    # ── موائمة ذكية لعمود A — عرض يساوي أطول نص KPI بسطر واحد ────────
-    # الخوارزمية: حساب أطول نص → تحويل لعرض Excel → تطبيق
-    # كل حرف عربي ≈ 0.55 وحدة عرض Excel (نص حجم 9)
+    # ── موائمة ذكية لعمود A ───────────────────────────────────────────
     all_kpi = [str(k) for (k,_,_) in job_kpis+per_kpis if str(k).strip()]
     mk = max((len(t) for t in all_kpi), default=20)
-    # عمود A ذكي: يتسع ليعرض أطول نص KPI بالكامل بدون قطع
-    # كل حرف عربي ≈ 0.62 وحدة عرض Excel بخط 10 bold
     _col_a_w = mk * 0.62 + 4
     ws.column_dimensions["A"].width = min(max(_col_a_w, 28), 80)
 
-    # ── حدود شاملة على كل خلية فيها قيمة ────────────────────────────
+    # ── حدود شاملة ────────────────────────────────────────────────────
     blk_t = Side(style="thin", color="000000")
     fb    = Border(left=blk_t, right=blk_t, top=blk_t, bottom=blk_t)
     for row in ws.iter_rows():
@@ -524,7 +527,7 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year,
 # ══════════════════════════════════════════════════════════════════════
 # ملخص القسم / الكل
 # ══════════════════════════════════════════════════════════════════════
-def build_summary_sheet(wb, rows, title="ملخص التقييم", year=None):
+def build_summary_sheet(wb, rows, title="ملخص التقييم", year=None, chart_img=None):
     ws = wb.create_sheet(title[:28])
     ws.sheet_view.rightToLeft  = True
     ws.sheet_view.showGridLines = False
@@ -587,20 +590,17 @@ def build_summary_sheet(wb, rows, title="ملخص التقييم", year=None):
                              b.top and b.top.style,b.bottom and b.bottom.style]):
                     cell.border=_fb
 
-    # ── إدراج الرسم البياني أسفل جدول الأشهر (E16) ───────────
     if chart_img:
         try:
             import io as _io
             from openpyxl.drawing.image import Image as _ChartImg
             _cbuf = _io.BytesIO(chart_img)
             _cimg = _ChartImg(_cbuf)
-            # الحجم الأصلي 14×7cm مُصغَّر 70% = 9.8×4.9cm
-            _W_CM = 9.8   # عرض
-            _H_CM = 4.9   # ارتفاع
-            _PX   = 37.795  # بكسل لكل سم
+            _W_CM = 9.8
+            _H_CM = 4.9
+            _PX   = 37.795
             _cimg.width  = int(_W_CM * _PX)
             _cimg.height = int(_H_CM * _PX)
-            # الموضع: E16 — أسفل جدول الأشهر مباشرة (صفوف 2-15)
             _cimg.anchor = "E16"
             ws.add_image(_cimg)
         except Exception as _ce:
