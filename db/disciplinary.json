@@ -1,1 +1,146 @@
-[]
+[
+  {
+    "id": 1,
+    "employee_name": "بكر هشام سعيد حرب",
+    "employee_id": "397",
+    "action_date": "2026-04-07",
+    "year": 2026,
+    "month": 4,
+    "warning_type": "إنذار أول",
+    "reason": "عدم التقيد بالتعليمات المعلنة",
+    "deduction_days": 0,
+    "created_at": "2026-04-26 10:00:00"
+  },
+  {
+    "id": 2,
+    "employee_name": "اسحاق محمد عبد الله محمد",
+    "employee_id": "440",
+    "action_date": "2026-04-05",
+    "year": 2026,
+    "month": 4,
+    "warning_type": "إنذار أول",
+    "reason": "عدم التقيد باجراءات السلامة",
+    "deduction_days": 0,
+    "created_at": "2026-04-26 10:00:00"
+  },
+  {
+    "id": 3,
+    "employee_name": "محمد عبد المجيد راشد الحداد",
+    "employee_id": "376",
+    "action_date": "2026-04-05",
+    "year": 2026,
+    "month": 4,
+    "warning_type": "إنذار ثاني",
+    "reason": "عدم مراعاه تعليمات السلامة",
+    "deduction_days": 0,
+    "created_at": "2026-04-26 10:00:00"
+  },
+  {
+    "id": 4,
+    "employee_name": "اسامة محمد عبد القادر اللاذقاني",
+    "employee_id": "437",
+    "action_date": "2026-04-08",
+    "year": 2026,
+    "month": 4,
+    "warning_type": "إنذار أول",
+    "reason": "التدخين في الاماكن المعلن خطورتها",
+    "deduction_days": 0,
+    "created_at": "2026-04-26 10:00:00"
+  },
+  {
+    "id": 5,
+    "employee_name": "محمد عمر ابراهيم رضوان",
+    "employee_id": "430",
+    "action_date": "2026-04-04",
+    "year": 2026,
+    "month": 4,
+    "warning_type": "إنذار نهائي",
+    "reason": "عدم التقيد بالتعليمات المعلنه",
+    "deduction_days": 0,
+    "created_at": "2026-04-26 10:00:00"
+  },
+  {
+    "id": 6,
+    "employee_name": "مصطفى عبد الرحمن مصطفى فواز",
+    "employee_id": "352",
+    "action_date": "2026-04-12",
+    "year": 2026,
+    "month": 4,
+    "warning_type": "إنذار ثاني",
+    "reason": "عدم التقيد بالتعليمات المعلنه",
+    "deduction_days": 0,
+    "created_at": "2026-04-26 10:00:00"
+  },
+  {
+    "id": 7,
+    "employee_name": "مصطفى سليمان محمود جميل",
+    "employee_id": "436",
+    "action_date": "2026-04-13",
+    "year": 2026,
+    "month": 4,
+    "warning_type": "تنبه خطي",
+    "reason": "الاهمال وقلة الاحتراز في العمل",
+    "deduction_days": 0,
+    "created_at": "2026-04-26 10:00:00"
+  },
+  {
+    "id": 8,
+    "employee_name": "انور عبدالوهاب زكي التوتنجي",
+    "employee_id": "20",
+    "action_date": "2026-04-16",
+    "year": 2026,
+    "month": 4,
+    "warning_type": "إنذار ثاني",
+    "reason": "عدم التقيد بالتعليمات المعلنه",
+    "deduction_days": 0,
+    "created_at": "2026-04-26 10:00:00"
+  },
+  {
+    "id": 9,
+    "employee_name": "خالد جميل عبد الله غريب",
+    "employee_id": "267",
+    "action_date": "2026-04-17",
+    "year": 2026,
+    "month": 4,
+    "warning_type": "تنبه خطي",
+    "reason": "التغيب عن العمل دون عذر او اذن",
+    "deduction_days": 0,
+    "created_at": "2026-04-26 10:00:00"
+  },
+  {
+    "id": 10,
+    "employee_name": "مصطفى عبد الرحمن مصطفى فواز",
+    "employee_id": "352",
+    "action_date": "2026-04-20",
+    "year": 2026,
+    "month": 4,
+    "warning_type": "تنبه خطي",
+    "reason": "اهمال في العمل",
+    "deduction_days": 0,
+    "created_at": "2026-04-26 10:00:00"
+  },
+  {
+    "id": 11,
+    "employee_name": "خالد خليفه حمدان السمارات",
+    "employee_id": "312",
+    "action_date": "2026-04-20",
+    "year": 2026,
+    "month": 4,
+    "warning_type": "إنذار ثاني",
+    "reason": "عدم التقيد بالتعليمات المعلنه",
+    "deduction_days": 0,
+    "created_at": "2026-04-26 10:00:00"
+  },
+  {
+    "id": 12,
+    "employee_name": "ياسر نادر ابراهيم عبد الجليل",
+    "employee_id": "302",
+    "action_date": "2026-04-20",
+    "year": 2026,
+    "month": 4,
+    "warning_type": "إنذار أول",
+    "reason": "عدم التقيد بالتعليمات المعلنه",
+    "deduction_days": 0,
+    "created_at": "2026-04-26 10:00:00"
+  }
+]
