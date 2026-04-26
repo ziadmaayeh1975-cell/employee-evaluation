@@ -5,6 +5,14 @@ from data_loader import save_evaluation
 from auth import get_current_reviewer, get_current_role
 from calculations import rating_label, rating_label_color, verbal_grade, grade_color_hex
 
+# استيراد دوال الإجراءات التأديبية
+try:
+    from disciplinary_loader import load_disciplinary_actions, get_employee_disciplinary, format_disciplinary_text
+    DISCIPLINARY_AVAILABLE = True
+except ImportError:
+    DISCIPLINARY_AVAILABLE = False
+    st.warning("⚠️ ملف disciplinary_loader.py غير موجود، الإجراءات التأديبية غير متاحة")
+
 INPUT_CSS = """<style>
 div[data-testid="stNumberInput"] input {
     background:#FECACA !important; color:#000 !important;
@@ -35,7 +43,7 @@ def _save_draft(emp, month, year, job_pct_values, pers_pct_values, notes, traini
     """حفظ مسودة في session_state - تخزن النسب المئوية التي أدخلها المستخدم (0-100)"""
     key = _draft_key(emp, month, year)
     st.session_state[key] = {
-        "job_pct_values":   job_pct_values.copy(),   # تخزين النسب المئوية فقط
+        "job_pct_values":   job_pct_values.copy(),
         "pers_pct_values":  pers_pct_values.copy(),
         "notes":            notes,
         "training":         training,
@@ -214,6 +222,43 @@ def render_entry(df_emp, df_kpi, df_data):
             _clear_draft(sel_emp, sel_month, sel_year)
             st.session_state.pop("sel_emp", None)
             st.rerun()
+
+    # ═══════════════════════════════════════════════════════════════════
+    # 📋 الإجراءات التأديبية
+    # ═══════════════════════════════════════════════════════════════════
+    if DISCIPLINARY_AVAILABLE:
+        try:
+            df_disc = load_disciplinary_actions()
+            if not df_disc.empty:
+                # جلب الإجراءات التأديبية للموظف في نفس الشهر والسنة
+                disc_actions = get_employee_disciplinary(df_disc, sel_emp, sel_year, sel_month)
+                
+                if not disc_actions.empty:
+                    st.markdown("---")
+                    st.markdown("#### ⚠️ الإجراءات التأديبية")
+                    st.warning(f"⚠️ يوجد **{len(disc_actions)}** إجراء(ات) تأديبي(ة) مسجلة للموظف في هذا الشهر")
+                    
+                    # عرض جدول الإجراءات
+                    display_df = disc_actions.copy()
+                    display_df = display_df.rename(columns={
+                        "warning_date": "التاريخ",
+                        "warning_type": "نوع الإنذار",
+                        "reason": "السبب",
+                        "deduction_days": "خصم (أيام)"
+                    })
+                    
+                    # اختيار الأعمدة المراد عرضها
+                    cols_to_show = ["التاريخ", "نوع الإنذار", "السبب", "خصم (أيام)"]
+                    available_cols = [c for c in cols_to_show if c in display_df.columns]
+                    
+                    st.dataframe(display_df[available_cols], hide_index=True, use_container_width=True)
+                    
+                    # تخزين الإجراءات في session_state لاستخدامها في التقرير
+                    st.session_state[f"disciplinary_{sel_emp}_{sel_month}_{sel_year}"] = disc_actions.to_dict('records')
+                else:
+                    st.info("✅ لا توجد إجراءات تأديبية للموظف في هذا الشهر")
+        except Exception as e:
+            st.error(f"⚠️ خطأ في تحميل الإجراءات التأديبية: {e}")
 
     kpi_rows_raw = df_kpi[df_kpi["JobTitle"].astype(str).str.strip() == job_title]
     if kpi_rows_raw.empty:
@@ -434,15 +479,18 @@ def render_entry(df_emp, df_kpi, df_data):
             kpi_rows = []
             for kname, actual_score in job_actual_scores.items():
                 # حساب النسبة المئوية للعرض فقط
-                weight = next((w for _, row in job_kpis.iterrows() 
-                              if str(row["KPI_Name"]).strip() == kname), None)
+                weight = None
+                for _, row in job_kpis.iterrows():
+                    if str(row["KPI_Name"]).strip() == kname:
+                        weight = float(row["Weight"])
+                        break
                 if weight is not None:
-                    weight_val = float(weight) if isinstance(weight, (int, float)) else weight.get("Weight", 0)
-                    pct_for_label = (actual_score / weight_val) * 100 if weight_val > 0 else 0
+                    pct_for_label = (actual_score / weight) * 100 if weight > 0 else 0
                     lbl = rating_label(pct_for_label)
                 else:
+                    weight = 0
                     lbl = "جيد"
-                kpi_rows.append((kname, weight_val if weight_val else 0, actual_score, lbl))
+                kpi_rows.append((kname, weight, actual_score, lbl))
             
             for kname, actual_score in pers_actual_scores.items():
                 weight = PERSONAL_WEIGHT
