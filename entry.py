@@ -3,7 +3,7 @@ import pandas as pd
 from constants import MONTHS_AR, MONTHS_EN, MONTH_MAP, PERSONAL_KPIS, PERSONAL_WEIGHT
 from data_loader import save_evaluation
 from auth import get_current_reviewer, get_current_role
-from calculations import calc_kpi_score, rating_label, rating_label_color, verbal_grade, grade_color_hex
+from calculations import rating_label, rating_label_color, verbal_grade, grade_color_hex
 
 INPUT_CSS = """<style>
 div[data-testid="stNumberInput"] input {
@@ -31,20 +31,20 @@ def _draft_key(emp, month, year):
     return f"draft_{emp}_{month}_{year}"
 
 
-def _save_draft(emp, month, year, job_grades, pers_grades, notes, training):
-    """حفظ مسودة في session_state."""
+def _save_draft(emp, month, year, job_pct_values, pers_pct_values, notes, training):
+    """حفظ مسودة في session_state - تخزن النسب المئوية التي أدخلها المستخدم (0-100)"""
     key = _draft_key(emp, month, year)
     st.session_state[key] = {
-        "job_grades":   {k: v for k, v in job_grades.items()},
-        "pers_grades":  {k: v for k, v in pers_grades.items()},
-        "notes":        notes,
-        "training":     training,
-        "timestamp":    pd.Timestamp.now().strftime("%H:%M"),
+        "job_pct_values":   job_pct_values.copy(),   # تخزين النسب المئوية فقط
+        "pers_pct_values":  pers_pct_values.copy(),
+        "notes":            notes,
+        "training":         training,
+        "timestamp":        pd.Timestamp.now().strftime("%H:%M"),
     }
 
 
 def _load_draft(emp, month, year):
-    """تحميل المسودة من session_state."""
+    """تحميل المسودة من session_state"""
     return st.session_state.get(_draft_key(emp, month, year), None)
 
 
@@ -54,10 +54,16 @@ def _clear_draft(emp, month, year):
         del st.session_state[key]
 
 
+def _calculate_actual_score(user_pct, weight):
+    """
+    حساب الدرجة الفعلية من النسبة المئوية والوزن الحقيقي
+    المعادلة: (قيمة المستخدم / 100) × الوزن الحقيقي
+    """
+    return (user_pct / 100.0) * weight
+
+
 def _completion_indicator(df_data, emp_list, year):
-    """
-    مؤشر اكتمال التقييمات — يُعيد جدول بالموظفين والأشهر المكتملة.
-    """
+    """مؤشر اكتمال التقييمات"""
     if df_data.empty or "EmployeeName" not in df_data.columns:
         return {}
     result = {}
@@ -140,9 +146,7 @@ def render_entry(df_emp, df_kpi, df_data):
         st.info("⬆️ اختر المقيم أولاً.")
         return
 
-    # ══════════════════════════════════════════════════════════════
-    # ③ مؤشر اكتمال التقييمات
-    # ══════════════════════════════════════════════════════════════
+    # مؤشر اكتمال التقييمات
     if emp_list and sel_emp == "-- اختر --":
         st.markdown("---")
         st.markdown("#### 📊 حالة التقييمات لهذا العام")
@@ -194,7 +198,7 @@ def render_entry(df_emp, df_kpi, df_data):
             st.error(f"⚠️ يوجد تقييم محفوظ لـ ({sel_emp}) في {sel_month} {sel_year}.")
             return
 
-    # ── رأس بيانات الموظف + زر إلغاء ──────────────────────────────
+    # رأس بيانات الموظف + زر إلغاء
     hc1, hc2 = st.columns([5, 1])
     with hc1:
         st.markdown(f"""
@@ -206,7 +210,6 @@ def render_entry(df_emp, df_kpi, df_data):
             <b>👨‍💼 المقيم:</b> {mgr_name}
         </div>""", unsafe_allow_html=True)
     with hc2:
-        # ① زر الإلغاء
         if st.button("❌ إلغاء", use_container_width=True, help="إلغاء والعودة"):
             _clear_draft(sel_emp, sel_month, sel_year)
             st.session_state.pop("sel_emp", None)
@@ -220,7 +223,7 @@ def render_entry(df_emp, df_kpi, df_data):
     job_kpis  = kpi_rows_raw[~kpi_rows_raw["KPI_Name"].isin(PERSONAL_KPIS)]
     pers_kpis = kpi_rows_raw[kpi_rows_raw["KPI_Name"].isin(PERSONAL_KPIS)]
 
-    # ② تحميل المسودة إن وجدت
+    # تحميل المسودة إن وجدت
     draft = _load_draft(sel_emp, sel_month, sel_year)
     if draft:
         st.info(f"📝 يوجد مسودة محفوظة بتاريخ {draft['timestamp']} — يمكنك متابعة الإدخال أو البدء من جديد.")
@@ -231,17 +234,26 @@ def render_entry(df_emp, df_kpi, df_data):
     COLORS = ["#DBEAFE","#E0F2FE","#EDE9FE","#FCE7F3","#D1FAE5",
               "#FEF3C7","#FEE2E2","#F0FDF4","#EFF6FF","#FDF4FF"]
 
+    # ═══════════════════════════════════════════════════════════════════
+    # مؤشرات الأداء الوظيفي (المقيم يرى فقط 0-100)
+    # ═══════════════════════════════════════════════════════════════════
     st.markdown("---")
     st.markdown("### 🎯 مؤشرات الأداء الوظيفي")
+    st.caption("📌 أدخل النسبة المئوية لكل مؤشر (من 0 إلى 100)")
 
-    job_grades = {}
+    job_pct_values = {}      # نسبة المستخدم (0-100)
+    job_actual_scores = {}   # الدرجة الفعلية بعد تطبيق الوزن
+    job_total_weight = 0.0
+
     for i, (_, row) in enumerate(job_kpis.iterrows()):
         kname  = str(row["KPI_Name"]).strip()
-        weight = float(row["Weight"])
+        weight = float(row["Weight"])  # الوزن الحقيقي المخزن (مثلاً 15)
         bg     = COLORS[i % len(COLORS)]
-        draft_val = draft["job_grades"].get(kname, (weight, 0.0))[1] if draft else 0.0
+        
+        # استرداد القيمة من المسودة إن وجدت
+        draft_val = draft["job_pct_values"].get(kname, 0.0) if draft else 0.0
 
-        col_name, col_inp, col_info = st.columns([4, 1.2, 1.5])
+        col_name, col_inp, col_info = st.columns([4, 1.5, 1.5])
         with col_name:
             st.markdown(f"""
             <div style="background:{bg};padding:10px 14px;border-radius:8px;
@@ -249,41 +261,74 @@ def render_entry(df_emp, df_kpi, df_data):
                         display:flex;align-items:center;">
                 <b style="font-size:13px;color:#1E3A8A;">{kname}</b>
                 <span style="margin-right:8px;color:#64748B;font-size:11px;">
-                    (الوزن: {weight}%)
+                    (الوزن في النظام: {weight}%)
                 </span>
             </div>""", unsafe_allow_html=True)
+        
         with col_inp:
-            val = st.number_input("", min_value=0.0, max_value=float(weight),
-                value=float(draft_val), step=0.1, key=f"kpi_{kname}",
-                label_visibility="collapsed", format="%.1f")
-            job_grades[kname] = (weight, val)
+            # المقيم يدخل نسبة من 0 إلى 100 فقط
+            user_pct = st.number_input(
+                "", 
+                min_value=0.0, 
+                max_value=100.0, 
+                value=float(draft_val), 
+                step=1.0, 
+                key=f"kpi_{kname}",
+                label_visibility="collapsed",
+                format="%.0f"
+            )
+            job_pct_values[kname] = user_pct
+            
+            # حساب الدرجة الفعلية في الخلفية
+            actual_score = _calculate_actual_score(user_pct, weight)
+            job_actual_scores[kname] = actual_score
+            job_total_weight += weight
+        
         with col_info:
-            score = calc_kpi_score(val, weight)
-            lbl   = rating_label(score / weight * 100 if weight else 0)
-            clr   = rating_label_color(lbl)
+            # عرض نتيجة التقييم بناءً على النسبة المدخلة
+            if user_pct >= 90:
+                lbl, clr = "ممتاز", "#15803d"
+            elif user_pct >= 80:
+                lbl, clr = "جيد جداً", "#1d4ed8"
+            elif user_pct >= 70:
+                lbl, clr = "جيد", "#92400e"
+            elif user_pct >= 60:
+                lbl, clr = "متوسط", "#b45309"
+            else:
+                lbl, clr = "ضعيف", "#b91c1c"
+            
             st.markdown(f"""
             <div style="background:{clr}22;border:1px solid {clr};
                         border-radius:6px;padding:4px 8px;text-align:center;
                         font-size:11px;font-weight:bold;color:{clr};">
-                {score:.1f}% — {lbl}
+                {user_pct:.0f}% — {lbl}
             </div>""", unsafe_allow_html=True)
 
-    job_total = sum(calc_kpi_score(v, w) for w, v in job_grades.values())
+    # حساب مجموع درجات الأداء الوظيفي
+    job_total = sum(job_actual_scores.values())
 
+    # ═══════════════════════════════════════════════════════════════════
+    # مؤشرات الصفات الشخصية (المقيم يرى فقط 0-100)
+    # ═══════════════════════════════════════════════════════════════════
     st.markdown("---")
     st.markdown("### 🌟 مؤشرات الصفات الشخصية")
+    st.caption("📌 أدخل النسبة المئوية لكل صفة (من 0 إلى 100)")
 
-    pers_grades = {}
+    pers_pct_values = {}
+    pers_actual_scores = {}
+    pers_total_weight = 0.0
+
     pers_source = pers_kpis if not pers_kpis.empty else \
         pd.DataFrame([{"KPI_Name": k, "Weight": PERSONAL_WEIGHT} for k in PERSONAL_KPIS])
 
     for i, (_, row) in enumerate(pers_source.iterrows()):
         kname  = str(row["KPI_Name"]).strip()
-        weight = float(row["Weight"])
+        weight = float(row["Weight"])  # الوزن الحقيقي (يجب أن يكون 4 لكل صفة)
         bg     = COLORS[(i+5) % len(COLORS)]
-        draft_val2 = draft["pers_grades"].get(kname, (weight, 0.0))[1] if draft else 0.0
+        
+        draft_val2 = draft["pers_pct_values"].get(kname, 0.0) if draft else 0.0
 
-        col_name2, col_inp2, col_info2 = st.columns([4, 1.2, 1.5])
+        col_name2, col_inp2, col_info2 = st.columns([4, 1.5, 1.5])
         with col_name2:
             st.markdown(f"""
             <div style="background:{bg};padding:10px 14px;border-radius:8px;
@@ -291,34 +336,79 @@ def render_entry(df_emp, df_kpi, df_data):
                         display:flex;align-items:center;">
                 <b style="font-size:13px;color:#92400E;">{kname}</b>
                 <span style="margin-right:8px;color:#64748B;font-size:11px;">
-                    (الوزن: {weight}%)
+                    (الوزن في النظام: {weight}%)
                 </span>
             </div>""", unsafe_allow_html=True)
+        
         with col_inp2:
-            val2 = st.number_input("", min_value=0.0, max_value=float(weight),
-                value=float(draft_val2), step=0.1, key=f"pers_{kname}",
-                label_visibility="collapsed", format="%.1f")
-            pers_grades[kname] = (weight, val2)
+            user_pct2 = st.number_input(
+                "", 
+                min_value=0.0, 
+                max_value=100.0, 
+                value=float(draft_val2), 
+                step=1.0, 
+                key=f"pers_{kname}",
+                label_visibility="collapsed",
+                format="%.0f"
+            )
+            pers_pct_values[kname] = user_pct2
+            
+            # حساب الدرجة الفعلية في الخلفية
+            actual_score2 = _calculate_actual_score(user_pct2, weight)
+            pers_actual_scores[kname] = actual_score2
+            pers_total_weight += weight
+        
         with col_info2:
-            lbl2 = rating_label(val2 / weight * 100 if weight else 0)
-            clr2 = rating_label_color(lbl2)
+            if user_pct2 >= 90:
+                lbl2, clr2 = "ممتاز", "#15803d"
+            elif user_pct2 >= 80:
+                lbl2, clr2 = "جيد جداً", "#1d4ed8"
+            elif user_pct2 >= 70:
+                lbl2, clr2 = "جيد", "#92400e"
+            elif user_pct2 >= 60:
+                lbl2, clr2 = "متوسط", "#b45309"
+            else:
+                lbl2, clr2 = "ضعيف", "#b91c1c"
+            
             st.markdown(f"""
             <div style="background:{clr2}22;border:1px solid {clr2};
                         border-radius:6px;padding:4px 8px;text-align:center;
                         font-size:11px;font-weight:bold;color:{clr2};">
-                {val2:.1f}% — {lbl2}
+                {user_pct2:.0f}% — {lbl2}
             </div>""", unsafe_allow_html=True)
 
-    pers_total  = sum(v for _, v in pers_grades.values())
+    # حساب مجموع درجات الصفات الشخصية
+    pers_total = sum(pers_actual_scores.values())
+    
+    # النتيجة النهائية (من 100)
     grand_total = job_total + pers_total
     verb = verbal_grade(grand_total)
     clr  = grade_color_hex(grand_total)
+
+    # عرض المجاميع التجميعية بطريقة شفافة
+    st.markdown(f"""
+    <div style="background:#F8FAFC;border:1px solid #CBD5E1;border-radius:12px;
+                padding:12px;margin:16px 0;direction:rtl;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+            <span style="color:#475569;">📊 مجموع أوزان المؤشرات الوظيفية:</span>
+            <span style="font-weight:bold;">{job_total_weight:.1f} / 80.0</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+            <span style="color:#475569;">⭐ مجموع أوزان الصفات الشخصية:</span>
+            <span style="font-weight:bold;">{pers_total_weight:.1f} / 20.0</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;">
+            <span style="color:#475569;">🎯 الدرجة الفعلية المحققة (وظيفي + شخصي):</span>
+            <span style="font-weight:bold;color:{clr};">{grand_total:.1f} / 100.0</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     st.markdown(f"""
     <div style="background:white;border:2px solid #1E3A8A;border-radius:12px;
                 padding:16px;text-align:center;margin:16px 0;">
         <div style="font-size:12px;color:#64748B;margin-bottom:4px;">
-            إجمالي النتيجة (وظيفي {job_total:.1f}% + شخصية {pers_total:.1f}%)
+            النتيجة النهائية السنوية المقترحة
         </div>
         <div style="font-size:2.5rem;font-weight:bold;color:{clr};">{grand_total:.1f}%</div>
         <div style="font-size:1rem;color:{clr};font-weight:600;">{verb}</div>
@@ -335,19 +425,31 @@ def render_entry(df_emp, df_kpi, df_data):
 
     rev_name = sel_reviewer if (sel_reviewer != "-- اختر المقيم --") else mgr_name
 
-    # ── أزرار الحفظ والمسودة والإلغاء ──────────────────────────────
+    # أزرار الحفظ والمسودة والإلغاء
     b1, b2, b3 = st.columns(3)
 
     with b1:
         if st.button("💾 حفظ التقييم", type="primary", use_container_width=True):
+            # بناء kpi_rows من الدرجات الفعلية المحسوبة
             kpi_rows = []
-            for kname, (weight, val) in job_grades.items():
-                score = calc_kpi_score(val, weight)
-                lbl   = rating_label(score / weight * 100 if weight else 0)
-                kpi_rows.append((kname, weight, score, lbl))
-            for kname, (weight, val) in pers_grades.items():
-                lbl = rating_label(val / weight * 100 if weight else 0)
-                kpi_rows.append((kname, weight, float(val), lbl))
+            for kname, actual_score in job_actual_scores.items():
+                # حساب النسبة المئوية للعرض فقط
+                weight = next((w for _, row in job_kpis.iterrows() 
+                              if str(row["KPI_Name"]).strip() == kname), None)
+                if weight is not None:
+                    weight_val = float(weight) if isinstance(weight, (int, float)) else weight.get("Weight", 0)
+                    pct_for_label = (actual_score / weight_val) * 100 if weight_val > 0 else 0
+                    lbl = rating_label(pct_for_label)
+                else:
+                    lbl = "جيد"
+                kpi_rows.append((kname, weight_val if weight_val else 0, actual_score, lbl))
+            
+            for kname, actual_score in pers_actual_scores.items():
+                weight = PERSONAL_WEIGHT
+                pct_for_label = (actual_score / weight) * 100 if weight > 0 else 0
+                lbl = rating_label(pct_for_label)
+                kpi_rows.append((kname, weight, actual_score, lbl))
+            
             ok, err = save_evaluation(
                 sel_emp, sel_month, sel_year, rev_name, dept_name,
                 kpi_rows, notes, training
@@ -361,15 +463,13 @@ def render_entry(df_emp, df_kpi, df_data):
                 st.error(f"❌ فشل الحفظ: {err}")
 
     with b2:
-        # ② زر حفظ المسودة
         if st.button("📌 حفظ مسودة", use_container_width=True,
                      help="احفظ التقدم الحالي للعودة إليه لاحقاً"):
             _save_draft(sel_emp, sel_month, sel_year,
-                        job_grades, pers_grades, notes, training)
+                        job_pct_values, pers_pct_values, notes, training)
             st.success("✅ تم حفظ المسودة — يمكنك العودة إليها لاحقاً.")
 
     with b3:
-        # ① زر الإلغاء
         if st.button("❌ إلغاء", use_container_width=True,
                      help="إلغاء والعودة بدون حفظ"):
             _clear_draft(sel_emp, sel_month, sel_year)
