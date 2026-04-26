@@ -1,6 +1,6 @@
 streamlit
-pandas
-openpyxl
-plotly
-reportlab
-supabase
+  pandas
+  openpyxl
+  plotly
+  reportlab
+  

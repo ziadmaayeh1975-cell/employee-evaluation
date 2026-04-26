@@ -18,9 +18,11 @@ except ImportError:
     _DB_PANEL_OK = False
 
 try:
-    from employees_module import render_employee_management, load_profiles
+    from employees_module import render_employee_management, render_cv_reports, load_profiles
 except ImportError:
     def render_employee_management(*args, **kwargs):
+        st.warning("ملف employees_module.py غير موجود.")
+    def render_cv_reports(*args, **kwargs):
         st.warning("ملف employees_module.py غير موجود.")
     def load_profiles():
         return []
@@ -58,14 +60,17 @@ def render_settings(df_emp, df_kpi, df_data):
 
     _tabs = ["👥 إدارة المستخدمين", "⏳ المستخدمون التجريبيون",
              "🏢 إعدادات الشركة", "👨‍💼 إدارة الموظفين",
-             "📊 قائمة مؤشرات الأداء", "🗄️ قاعدة البيانات"]
+             "📊 قائمة مؤشرات الأداء", "📋 ملفات الموظفين (CV)"]
+    if _DB_PANEL_OK:
+        _tabs.append("🗄️ قاعدة البيانات")
     _tab_objs   = st.tabs(_tabs)
     set_tab1    = _tab_objs[0]
     set_tab2    = _tab_objs[1]
     set_tab3    = _tab_objs[2]
     set_tab4    = _tab_objs[3]
     set_tab_kpi = _tab_objs[4]
-    set_tab_db  = _tab_objs[5]
+    set_tab5    = _tab_objs[5]
+    set_tab6    = _tab_objs[6] if _DB_PANEL_OK else None
 
     # ══════════════════════════════════════════════════════════════════
     # تاب 1 — إدارة المستخدمين
@@ -484,7 +489,7 @@ def render_settings(df_emp, df_kpi, df_data):
                 st.rerun()
 
     # ══════════════════════════════════════════════════════════════════
-    # تاب 4 و 5
+    # تاب 4 و 5 و 6
     # ══════════════════════════════════════════════════════════════════
     with set_tab4:
         if _EMP_KPI_OK:
@@ -498,42 +503,9 @@ def render_settings(df_emp, df_kpi, df_data):
         else:
             st.info("employees_kpis_panel.py غير موجود")
 
-    # ══════════════════════════════════════════════════════════════════
-    # تاب 6 — قاعدة البيانات (استيراد/تصدير)
-    # ══════════════════════════════════════════════════════════════════
-    with set_tab_db:
-        st.subheader("📤 نقل البيانات من Excel")
-        st.markdown("""
-        يمكنك رفع ملف Excel لاستيراد بيانات الموظفين والمؤشرات إلى قاعدة البيانات.
-        هذا الخيار مثالي لتحديث النظام ببيانات جديدة مرة واحدة أو بشكل دوري.
-        """)
-        
-        uploaded_file = st.file_uploader("📁 اختر ملف Excel (.xlsm أو .xlsx)", type=["xlsm", "xlsx"])
-        if uploaded_file is not None:
-            if st.button("🔄 بدء الاستيراد", type="primary"):
-                with st.spinner("جاري استيراد البيانات..."):
-                    try:
-                        from database_manager import import_from_excel
-                        import tempfile
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-                            tmp.write(uploaded_file.getbuffer())
-                            result = import_from_excel(tmp.name)
-                        os.unlink(tmp.name)
-                        if result.get("success"):
-                            st.success("✅ تم استيراد البيانات بنجاح!")
-                            st.balloons()
-                            st.rerun()
-                        else:
-                            st.error(result.get("message", "فشل الاستيراد"))
-                    except Exception as e:
-                        st.error(f"❌ خطأ: {e}")
-        
-        st.divider()
-        st.subheader("💾 تصدير قاعدة البيانات")
-        if st.button("⬇️ تحميل نسخة Excel من قاعدة البيانات"):
-            try:
-                from database_manager import export_db_to_excel
-                data = export_db_to_excel()
-                st.download_button("📥 اضغط للتحميل", data=data, file_name="database_backup.xlsx", mime="application/vnd.ms-excel")
-            except Exception as e:
-                st.error(f"❌ خطأ: {e}")
+    with set_tab5:
+        render_cv_reports(df_emp, df_data, df_kpi, load_app_settings(), LOGO_PATH)
+
+    if _DB_PANEL_OK and set_tab6:
+        with set_tab6:
+            render_db_panel()

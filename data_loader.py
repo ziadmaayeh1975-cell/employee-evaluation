@@ -1,162 +1,107 @@
-# data_loader.py
+"""
+data_loader.py — يقرأ من قاعدة البيانات أولاً، Excel احتياطياً
+"""
 import pandas as pd
 import streamlit as st
-import json
-import os
 from datetime import date
 from constants import FILE_PATH, MONTH_MAP
 
-def _empty_dfs():
-    return (pd.DataFrame(columns=["EmployeeName","JobTitle","Department","Manager"]),
-            pd.DataFrame(columns=["JobTitle","KPI_Name","Weight"]),
-            pd.DataFrame(columns=["EmployeeName","Month","KPI_Name","Weight","KPI_%","Evaluator","Notes","Year","EvalDate","Training"]))
+try:
+    from database_manager import load_data_from_db, save_evaluation_to_db, db_exists
+    _DB_AVAILABLE = True
+except ImportError:
+    _DB_AVAILABLE = False
 
-def migrate_from_excel():
-    if not os.path.exists(FILE_PATH):
-        return False, f"ملف {FILE_PATH} غير موجود"
-    try:
-        df_emp = pd.read_excel(FILE_PATH, sheet_name="EMPLOYEES")
-        df_emp.columns = [str(c).strip() for c in df_emp.columns]
-        employees_list = []
-        for _, row in df_emp.iterrows():
-            try:
-                dept_val = str(row.get("القسم", row.get("Department", "")))
-                mgr_val = str(row.get("اسم المقيم", row.get("Manager", "")))
-                employees_list.append({
-                    "EmployeeName": str(row.get("EmployeeName", "")),
-                    "JobTitle": str(row.get("JobTitle", "")),
-                    "Department": dept_val,
-                    "Manager": mgr_val
-                })
-            except: pass
-        with open("emp_profiles.json","w",encoding="utf-8") as f:
-            json.dump({"employees": employees_list}, f, ensure_ascii=False, indent=2)
-
-        df_kpi = pd.read_excel(FILE_PATH, sheet_name="KPIs")
-        df_kpi.columns = [str(c).strip() for c in df_kpi.columns]
-        kpis_list = []
-        for _, row in df_kpi.iterrows():
-            try:
-                kpis_list.append({
-                    "JobTitle": str(row.get("JobTitle", "")),
-                    "KPI_Name": str(row.get("KPI_Name", "")),
-                    "Weight": float(row.get("Weight", 0))
-                })
-            except: pass
-        os.makedirs("db", exist_ok=True)
-        with open("db/kpis.json","w",encoding="utf-8") as f:
-            json.dump({"kpis": kpis_list}, f, ensure_ascii=False, indent=2)
-        
-        load_data.clear()
-        return True, f"تم نقل {len(employees_list)} موظف و {len(kpis_list)} مؤشر"
-    except Exception as e:
-        return False, f"فشل النقل: {e}"
 
 @st.cache_data(ttl=30)
 def load_data():
+    if _DB_AVAILABLE and db_exists():
+        return load_data_from_db()
+    # ── احتياطي: Excel ──────────────────────────────────────
     try:
-        if os.path.exists("emp_profiles.json") and os.path.exists("db/kpis.json"):
-            with open("emp_profiles.json","r",encoding="utf-8") as f:
-                emp_json = json.load(f)
-                df_emp = pd.DataFrame(emp_json.get("employees", []))
-            with open("db/kpis.json","r",encoding="utf-8") as f:
-                kpi_json = json.load(f)
-                df_kpi = pd.DataFrame(kpi_json.get("kpis", []))
-            
-            ev_path = "db/evaluations.json"
-            if not os.path.exists(ev_path):
-                os.makedirs("db", exist_ok=True)
-                with open(ev_path, "w", encoding="utf-8") as f:
-                    json.dump({"evaluations": []}, f)
-            
-            with open(ev_path, "r", encoding="utf-8") as f:
-                ev_json = json.load(f)
-            df_data = pd.DataFrame(ev_json.get("evaluations", []))
-            
-            if not df_emp.empty and not df_kpi.empty:
-                return df_emp, df_kpi, df_data
+        import openpyxl
+        df_emp  = pd.read_excel(FILE_PATH, sheet_name="EMPLOYEES")
+        df_kpi  = pd.read_excel(FILE_PATH, sheet_name="KPIs")
+        df_data = pd.read_excel(FILE_PATH, sheet_name="DATA")
+        for df in [df_emp, df_kpi, df_data]:
+            df.columns = [str(c).strip() for c in df.columns]
+            for col in df.select_dtypes("object").columns:
+                df[col] = df[col].astype(str).str.strip()
+
+        # توحيد أسماء أعمدة EMPLOYEES
+        col_map_emp = {}
+        for c in df_emp.columns:
+            if c in ("القسم", "Department"):
+                col_map_emp[c] = "Department"
+            elif c in ("اسم المقيم", "Manager", "Evaluator"):
+                col_map_emp[c] = "Manager"
+        if col_map_emp:
+            df_emp.rename(columns=col_map_emp, inplace=True)
+
+        # توحيد أسماء أعمدة DATA: Nots → Notes
+        if "Nots" in df_data.columns and "Notes" not in df_data.columns:
+            df_data.rename(columns={"Nots": "Notes"}, inplace=True)
+
+        # أعمدة اختيارية
+        if "Year" not in df_data.columns:
+            df_data["Year"] = 2025
+        else:
+            df_data["Year"] = pd.to_numeric(df_data["Year"], errors="coerce").fillna(2025).astype(int)
+        if "EvalDate"  not in df_data.columns: df_data["EvalDate"]  = ""
+        if "Training"  not in df_data.columns: df_data["Training"]  = ""
+        if "Notes"     not in df_data.columns: df_data["Notes"]     = ""
+
+        return df_emp, df_kpi, df_data
     except Exception as e:
-        st.warning(f"خطأ في قراءة JSON: {e}")
-
-    if os.path.exists(FILE_PATH):
-        try:
-            df_emp = pd.read_excel(FILE_PATH, sheet_name="EMPLOYEES")
-            df_emp.columns = [str(c).strip() for c in df_emp.columns]
-            df_kpi = pd.read_excel(FILE_PATH, sheet_name="KPIs")
-            df_kpi.columns = [str(c).strip() for c in df_kpi.columns]
-            return df_emp, df_kpi, _empty_dfs()[2]
-        except:
-            pass
-    
-    return _empty_dfs()
+        st.error(f"❌ تعذّر تحميل البيانات: {e}")
+        return None, None, None
 
 
-# ============================================================
-# دالة الحفظ - مبرمجة من الصفر
-# ============================================================
-def save_evaluation(emp_name, month_ar, year, manager, dept, kpi_rows, notes="", training=""):
-    """
-    حفظ تقييم موظف في ملف JSON
-    """
-    # 1. تجهيز المسار
-    folder = "db"
-    file_path = os.path.join(folder, "evaluations.json")
-    
-    # 2. إنشاء المجلد إذا لم يكن موجوداً
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-    
-    # 3. قراءة التقييمات الحالية أو إنشاء قائمة فارغة
-    all_evaluations = []
-    if os.path.exists(file_path):
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-                if content.strip():
-                    data = json.loads(content)
-                    all_evaluations = data.get("evaluations", [])
-        except:
-            all_evaluations = []
-    
-    # 4. تحويل اسم الشهر
-    month_en = MONTH_MAP.get(month_ar, month_ar)
-    
-    # 5. تاريخ اليوم
-    today_str = date.today().strftime("%Y-%m-%d")
-    
-    # 6. إضافة صفوف التقييم
-    count = 0
-    for item in kpi_rows:
-        kpi_name = str(item[0])
-        weight = float(item[1])
-        grade = float(item[2])
-        
-        all_evaluations.append({
-            "EmployeeName": str(emp_name),
-            "Month": str(month_en),
-            "Year": int(year),
-            "KPI_Name": kpi_name,
-            "Weight": weight,
-            "KPI_%": grade,
-            "Evaluator": str(manager),
-            "Notes": str(notes) if notes else "",
-            "Training": str(training) if training else "",
-            "EvalDate": today_str
-        })
-        count += 1
-    
-    # 7. حفظ الملف
+def save_evaluation(emp_name, month_ar, year, manager, dept,
+                    kpi_rows, notes="", training=""):
+    if _DB_AVAILABLE and db_exists():
+        ok, err = save_evaluation_to_db(emp_name, month_ar, year, manager, dept,
+                                         kpi_rows, notes, training)
+        if ok: load_data.clear()
+        return ok, err
+    # ── احتياطي: Excel ──────────────────────────────────────
     try:
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump({"evaluations": all_evaluations}, f, ensure_ascii=False, indent=2)
-        
-        # 8. مسح الذاكرة المؤقتة
-        load_data.clear()
-        
-        return True, f"تم حفظ {count} صف تقييم بنجاح"
+        import openpyxl
+        wb  = openpyxl.load_workbook(FILE_PATH, keep_vba=True)
+        ws  = wb["DATA"]
+        if ws.cell(1, 8).value  != "Year":     ws.cell(1, 8).value  = "Year"
+        if ws.cell(1, 9).value  != "EvalDate": ws.cell(1, 9).value  = "EvalDate"
+        if ws.cell(1, 10).value != "Training": ws.cell(1, 10).value = "Training"
+        month_en  = MONTH_MAP.get(month_ar, month_ar)
+        eval_date = date.today().strftime("%d/%m/%Y")
+        nr = ws.max_row + 1
+        for item in kpi_rows:
+            if len(item) == 4:
+                kpi_name, weight, grade, rating_lbl = item
+            else:
+                kpi_name, weight, grade = item[:3]
+                rating_lbl = ""
+            ws.cell(nr,1).value = emp_name;   ws.cell(nr,2).value = month_en
+            ws.cell(nr,3).value = kpi_name;   ws.cell(nr,4).value = float(weight)
+            ws.cell(nr,5).value = round(float(grade), 2)
+            ws.cell(nr,6).value = manager;    ws.cell(nr,7).value = notes
+            ws.cell(nr,8).value = int(year);  ws.cell(nr,9).value = eval_date
+            ws.cell(nr,10).value = training;  ws.cell(nr,11).value = rating_lbl
+            nr += 1
+        wb.save(FILE_PATH)
+        return True, None
     except Exception as e:
         return False, str(e)
 
 
-def get_emp_notes(emp):
-    return "", ""
+def get_emp_notes(emp_name):
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(FILE_PATH, read_only=True, keep_vba=True)
+        ws = wb["INPUT"]
+        notes    = ws["B20"].value or ""
+        training = ws["B21"].value or ""
+        wb.close()
+        return str(notes), str(training)
+    except:
+        return "", ""
