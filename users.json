@@ -34,5 +34,11 @@
     "role": "user",
     "reviewer": "سيف بدر",
     "password": "f0f1d967eaeddd61388197fc49a8bb256ce12d837d8a2d9d47df2f223246c1a6"
+  },
+  "trial_reviewer": {
+    "display": "مقيم تجريبي",
+    "role": "user",
+    "reviewer": "مقيم تجريبي",
+    "password": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92"
   }
 }
