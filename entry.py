@@ -5,13 +5,15 @@ from data_loader import save_evaluation
 from auth import get_current_reviewer, get_current_role
 from calculations import rating_label, rating_label_color, verbal_grade, grade_color_hex
 
-# استيراد دوال الإجراءات التأديبية
+# استيراد دوال الإجراءات التأديبية من المدير الجديد
 try:
-    from disciplinary_loader import load_disciplinary_actions, get_employee_disciplinary, format_disciplinary_text
+    from disciplinary_manager import load_actions as load_disciplinary_actions
+    from disciplinary_manager import get_actions_by_employee as get_employee_disciplinary
+    from disciplinary_manager import get_actions_summary as format_disciplinary_text
     DISCIPLINARY_AVAILABLE = True
 except ImportError:
     DISCIPLINARY_AVAILABLE = False
-    st.warning("⚠️ ملف disciplinary_loader.py غير موجود، الإجراءات التأديبية غير متاحة")
+    st.warning("⚠️ نظام الإجراءات التأديبية غير متاح")
 
 INPUT_CSS = """<style>
 div[data-testid="stNumberInput"] input {
@@ -228,33 +230,33 @@ def render_entry(df_emp, df_kpi, df_data):
     # ═══════════════════════════════════════════════════════════════════
     if DISCIPLINARY_AVAILABLE:
         try:
-            df_disc = load_disciplinary_actions()
-            if not df_disc.empty:
+            # تحميل الإجراءات من المدير الجديد
+            all_actions = load_disciplinary_actions()
+            if all_actions:
                 # جلب الإجراءات التأديبية للموظف في نفس الشهر والسنة
-                disc_actions = get_employee_disciplinary(df_disc, sel_emp, sel_year, sel_month)
+                disc_actions = get_employee_disciplinary(sel_emp, sel_year, sel_month)
                 
-                if not disc_actions.empty:
+                if disc_actions:
                     st.markdown("---")
                     st.markdown("#### ⚠️ الإجراءات التأديبية")
                     st.warning(f"⚠️ يوجد **{len(disc_actions)}** إجراء(ات) تأديبي(ة) مسجلة للموظف في هذا الشهر")
                     
                     # عرض جدول الإجراءات
-                    display_df = disc_actions.copy()
-                    display_df = display_df.rename(columns={
-                        "warning_date": "التاريخ",
-                        "warning_type": "نوع الإنذار",
-                        "reason": "السبب",
-                        "deduction_days": "خصم (أيام)"
-                    })
+                    display_data = []
+                    for a in disc_actions:
+                        display_data.append({
+                            "التاريخ": a.get("action_date", ""),
+                            "نوع الإنذار": a.get("warning_type", ""),
+                            "السبب": a.get("reason", ""),
+                            "خصم (أيام)": a.get("deduction_days", 0)
+                        })
                     
-                    # اختيار الأعمدة المراد عرضها
-                    cols_to_show = ["التاريخ", "نوع الإنذار", "السبب", "خصم (أيام)"]
-                    available_cols = [c for c in cols_to_show if c in display_df.columns]
-                    
-                    st.dataframe(display_df[available_cols], hide_index=True, use_container_width=True)
+                    if display_data:
+                        display_df = pd.DataFrame(display_data)
+                        st.dataframe(display_df, hide_index=True, use_container_width=True)
                     
                     # تخزين الإجراءات في session_state لاستخدامها في التقرير
-                    st.session_state[f"disciplinary_{sel_emp}_{sel_month}_{sel_year}"] = disc_actions.to_dict('records')
+                    st.session_state[f"disciplinary_{sel_emp}_{sel_month}_{sel_year}"] = disc_actions
                 else:
                     st.info("✅ لا توجد إجراءات تأديبية للموظف في هذا الشهر")
         except Exception as e:
