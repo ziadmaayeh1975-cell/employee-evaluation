@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, date
 import streamlit as st
+import pandas as pd
 from constants import LOGO_PATH
 from auth import (hash_pw, load_users, save_users, add_user, update_user, delete_user,
                   load_trial_users, save_trial_users,
@@ -26,6 +27,15 @@ except ImportError:
         st.warning("ملف employees_module.py غير موجود.")
     def load_profiles():
         return []
+
+try:
+    from disciplinary_manager import (
+        load_actions, add_action, update_action, delete_action,
+        import_from_excel, export_to_excel, get_actions_by_employee
+    )
+    _DISCIPLINARY_OK = True
+except ImportError:
+    _DISCIPLINARY_OK = False
 
 
 # ── دوال مساعدة للأدوار ──────────────────────────────────────────────
@@ -58,11 +68,17 @@ def render_settings(df_emp, df_kpi, df_data):
     TRIAL_DATA = load_trial_users()
     APP_CFG    = load_app_settings()
 
+    # بناء قائمة التبويبات مع إضافة الإجراءات التأديبية
     _tabs = ["👥 إدارة المستخدمين", "⏳ المستخدمون التجريبيون",
              "🏢 إعدادات الشركة", "👨‍💼 إدارة الموظفين",
              "📊 قائمة مؤشرات الأداء", "📋 ملفات الموظفين (CV)"]
+    
+    if _DISCIPLINARY_OK:
+        _tabs.append("⚠️ الإجراءات التأديبية")
+    
     if _DB_PANEL_OK:
         _tabs.append("🗄️ قاعدة البيانات")
+    
     _tab_objs   = st.tabs(_tabs)
     set_tab1    = _tab_objs[0]
     set_tab2    = _tab_objs[1]
@@ -70,7 +86,13 @@ def render_settings(df_emp, df_kpi, df_data):
     set_tab4    = _tab_objs[3]
     set_tab_kpi = _tab_objs[4]
     set_tab5    = _tab_objs[5]
-    set_tab6    = _tab_objs[6] if _DB_PANEL_OK else None
+    
+    # التبويبات الإضافية
+    disc_tab_index = 6
+    db_tab_index = 7 if _DISCIPLINARY_OK else 6
+    
+    set_tab_disc = _tab_objs[disc_tab_index] if _DISCIPLINARY_OK else None
+    set_tab6 = _tab_objs[db_tab_index] if _DB_PANEL_OK else None
 
     # ══════════════════════════════════════════════════════════════════
     # تاب 1 — إدارة المستخدمين
@@ -489,7 +511,7 @@ def render_settings(df_emp, df_kpi, df_data):
                 st.rerun()
 
     # ══════════════════════════════════════════════════════════════════
-    # تاب 4 و 5 و 6
+    # تاب 4 — إدارة الموظفين
     # ══════════════════════════════════════════════════════════════════
     with set_tab4:
         try:
@@ -501,6 +523,9 @@ def render_settings(df_emp, df_kpi, df_data):
             st.warning(f"⚠️ تعذّر تحميل إدارة الموظفين: {_e4}")
             st.info("💡 استورد البيانات من تبويب 'قاعدة البيانات' أولاً.")
 
+    # ══════════════════════════════════════════════════════════════════
+    # تاب 5 — قائمة مؤشرات الأداء
+    # ══════════════════════════════════════════════════════════════════
     with set_tab_kpi:
         try:
             if _EMP_KPI_OK:
@@ -511,9 +536,135 @@ def render_settings(df_emp, df_kpi, df_data):
             st.warning(f"⚠️ تعذّر تحميل مؤشرات الأداء: {_ek}")
             st.info("💡 استورد البيانات من تبويب 'قاعدة البيانات' أولاً.")
 
+    # ══════════════════════════════════════════════════════════════════
+    # تاب 6 — ملفات الموظفين (CV)
+    # ══════════════════════════════════════════════════════════════════
     with set_tab5:
         render_cv_reports(df_emp, df_data, df_kpi, load_app_settings(), LOGO_PATH)
 
+    # ══════════════════════════════════════════════════════════════════
+    # ⚠️ تبويب الإجراءات التأديبية (جديد)
+    # ══════════════════════════════════════════════════════════════════
+    if _DISCIPLINARY_OK and set_tab_disc:
+        with set_tab_disc:
+            st.markdown("#### ⚠️ إدارة الإجراءات التأديبية")
+            
+            # عرض الإحصائيات السريعة
+            all_actions = load_actions()
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("📋 إجمالي الإجراءات", len(all_actions))
+            with col2:
+                # حساب عدد الموظفين الذين لديهم إجراءات
+                unique_emps = len(set(a.get("employee_name", "") for a in all_actions))
+                st.metric("👥 موظف لديه إجراءات", unique_emps)
+            with col3:
+                # عدد الإنذارات في الشهر الحالي
+                current_month = datetime.now().strftime("%Y-%m")
+                current_month_actions = [a for a in all_actions if a.get("action_date", "").startswith(current_month)]
+                st.metric("📅 هذا الشهر", len(current_month_actions))
+            
+            st.markdown("---")
+            
+            # عرض جدول الإجراءات
+            if all_actions:
+                df_actions = pd.DataFrame(all_actions)
+                # اختيار الأعمدة المناسبة
+                display_cols = ["employee_name", "action_date", "warning_type", "reason", "deduction_days"]
+                available_cols = [c for c in display_cols if c in df_actions.columns]
+                
+                display_df = df_actions[available_cols].copy()
+                display_df = display_df.rename(columns={
+                    "employee_name": "الموظف",
+                    "action_date": "التاريخ",
+                    "warning_type": "نوع الإنذار",
+                    "reason": "السبب",
+                    "deduction_days": "خصم (أيام)"
+                })
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("لا توجد إجراءات تأديبية مسجلة")
+            
+            st.markdown("---")
+            
+            # أزرار العمليات
+            op1, op2, op3, op4 = st.columns(4)
+            
+            with op1:
+                with st.expander("➕ إضافة إجراء جديد"):
+                    # جلب أسماء الموظفين من قاعدة البيانات الرئيسية
+                    if df_emp is not None and not df_emp.empty:
+                        emp_names = sorted(df_emp["EmployeeName"].dropna().astype(str).str.strip().tolist())
+                    else:
+                        emp_names = []
+                    
+                    new_emp = st.selectbox("الموظف", emp_names if emp_names else ["لا يوجد موظفين"])
+                    new_date = st.date_input("التاريخ", value=date.today())
+                    new_type = st.selectbox("نوع الإنذار", ["تنبه خطي", "إنذار أول", "إنذار ثاني", "إنذار نهائي", "فصل"])
+                    new_reason = st.text_area("السبب")
+                    new_deduction = st.number_input("عدد أيام الخصم", min_value=0, value=0)
+                    
+                    if st.button("💾 إضافة الإجراء"):
+                        if new_emp and new_emp != "لا يوجد موظفين":
+                            # جلب رقم الموظف إذا موجود
+                            emp_id = ""
+                            if df_emp is not None:
+                                emp_row = df_emp[df_emp["EmployeeName"] == new_emp]
+                                if not emp_row.empty and "emp_id" in emp_row.columns:
+                                    emp_id = str(emp_row.iloc[0].get("emp_id", ""))
+                            
+                            add_action(
+                                emp_name=new_emp,
+                                emp_id=emp_id,
+                                action_date=new_date.strftime("%Y-%m-%d"),
+                                warning_type=new_type,
+                                reason=new_reason,
+                                deduction_days=new_deduction
+                            )
+                            st.success("✅ تم إضافة الإجراء")
+                            st.rerun()
+                        else:
+                            st.error("⚠️ اختر موظفاً أولاً")
+            
+            with op2:
+                with st.expander("📥 استيراد من Excel"):
+                    uploaded = st.file_uploader("اختر ملف Excel", type=["xlsx", "xls"])
+                    if uploaded:
+                        success, msg = import_from_excel(uploaded)
+                        if success:
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+            
+            with op3:
+                with st.expander("📤 تصدير إلى Excel"):
+                    if st.button("إنشاء ملف Excel"):
+                        buf = export_to_excel()
+                        st.download_button(
+                            "⬇️ تحميل",
+                            data=buf,
+                            file_name=f"disciplinary_actions_{date.today()}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+            
+            with op4:
+                with st.expander("🗑️ حذف إجراء"):
+                    if all_actions:
+                        action_options = {f"{a.get('employee_name', '')} - {a.get('action_date', '')} - {a.get('warning_type', '')}": a.get("id") 
+                                         for a in all_actions}
+                        selected = st.selectbox("اختر الإجراء", list(action_options.keys()))
+                        if st.button("🗑️ حذف", type="primary"):
+                            action_id = action_options[selected]
+                            delete_action(action_id)
+                            st.success("✅ تم حذف الإجراء")
+                            st.rerun()
+                    else:
+                        st.info("لا توجد إجراءات للحذف")
+
+    # ══════════════════════════════════════════════════════════════════
+    # قاعدة البيانات
+    # ══════════════════════════════════════════════════════════════════
     if _DB_PANEL_OK and set_tab6:
         with set_tab6:
             render_db_panel()
