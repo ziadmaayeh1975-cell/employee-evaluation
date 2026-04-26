@@ -28,10 +28,12 @@ except ImportError:
     def load_profiles():
         return []
 
+# استيراد نظام الإجراءات التأديبية
 try:
     from disciplinary_manager import (
-        load_actions, add_action, update_action, delete_action,
-        import_from_excel, export_to_excel, get_actions_by_employee
+        load_actions, add_action, update_action, delete_action, clear_all_actions,
+        import_from_excel, export_to_excel, get_actions_by_employee,
+        get_statistics, get_unique_years, get_months_with_actions
     )
     _DISCIPLINARY_OK = True
 except ImportError:
@@ -100,7 +102,6 @@ def render_settings(df_emp, df_kpi, df_data):
     with set_tab1:
         st.markdown("### 👥 المستخدمون الفعّالون")
 
-        # ── إشعار للأدمن العادي ─────────────────────────────────────
         if not _is_super_admin():
             st.info("👁️ أنت تعرض قائمة المستخدمين فقط — صلاحية التعديل والحذف للأدمن الرئيسي.")
 
@@ -109,7 +110,6 @@ def render_settings(df_emp, df_kpi, df_data):
         if "settings_target" not in st.session_state:
             st.session_state.settings_target = None
 
-        # ── رأس الجدول ───────────────────────────────────────────────
         h1, h2, h3, h4, h5, _ = st.columns([3, 3, 2, 1.2, 1.2, 0.1])
         for col, label in zip([h1, h2, h3, h4, h5],
                                ["الاسم الظاهر", "اسم الدخول", "الدور", "تعديل", "حذف"]):
@@ -140,7 +140,6 @@ def render_settings(df_emp, df_kpi, df_data):
                 f"font-size:13px;text-align:center;color:{role_clr};font-weight:bold;"
                 f"border:1px solid #E2E8F0;'>{role_lbl}</div>", unsafe_allow_html=True)
 
-            # ── أزرار التعديل والحذف — للأدمن الرئيسي فقط ──────────
             with c4:
                 if _is_super_admin():
                     if st.button("✏️", key=f"edit_btn_{uname}",
@@ -154,7 +153,6 @@ def render_settings(df_emp, df_kpi, df_data):
                                 unsafe_allow_html=True)
 
             with c5:
-                # لا يمكن حذف المستخدم admin الأساسي، وفقط super_admin يحذف
                 if _is_super_admin() and uname != "admin":
                     if st.button("🗑️", key=f"del_btn_{uname}",
                                  use_container_width=True, help="حذف المستخدم"):
@@ -170,7 +168,6 @@ def render_settings(df_emp, df_kpi, df_data):
         action = st.session_state.settings_action
         target = st.session_state.settings_target
 
-        # ── تأكيد الحذف ─────────────────────────────────────────────
         if action == "delete" and target and _is_super_admin():
             st.error(f"⚠️ هل تريد حذف المستخدم **{target}** "
                      f"({USERS[target].get('display', '')})?")
@@ -189,7 +186,6 @@ def render_settings(df_emp, df_kpi, df_data):
                     st.session_state.settings_target = None
                     st.rerun()
 
-        # ── تعديل المستخدم ───────────────────────────────────────────
         elif action == "edit" and target and _is_super_admin():
             st.markdown(f"#### ✏️ تعديل: **{USERS[target].get('display', target)}**")
             with st.form("edit_user_form"):
@@ -238,7 +234,6 @@ def render_settings(df_emp, df_kpi, df_data):
                     if new_pw_e.strip():
                         updated_data["password"] = hash_pw(new_pw_e)
 
-                    # إذا تغير اسم الدخول: احذف القديم وأضف الجديد
                     if new_uname_final != target:
                         del USERS[target]
                     USERS[new_uname_final] = updated_data
@@ -253,7 +248,6 @@ def render_settings(df_emp, df_kpi, df_data):
                     st.session_state.settings_target = None
                     st.rerun()
 
-        # ── إضافة مستخدم جديد — للأدمن الرئيسي فقط ─────────────────
         elif _is_super_admin():
             st.markdown("#### ➕ إضافة مستخدم جديد")
             with st.form("add_user_form"):
@@ -293,7 +287,7 @@ def render_settings(df_emp, df_kpi, df_data):
                         st.error("⚠️ أدخل اسم الدخول وكلمة المرور.")
 
     # ══════════════════════════════════════════════════════════════════
-    # تاب 2 — المستخدمون التجريبيون (super_admin فقط يعدل/يحذف)
+    # تاب 2 — المستخدمون التجريبيون
     # ══════════════════════════════════════════════════════════════════
     with set_tab2:
         st.markdown("#### ⏳ المستخدمون التجريبيون")
@@ -550,26 +544,21 @@ def render_settings(df_emp, df_kpi, df_data):
             st.markdown("#### ⚠️ إدارة الإجراءات التأديبية")
             
             # عرض الإحصائيات السريعة
-            all_actions = load_actions()
+            stats = get_statistics()
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("📋 إجمالي الإجراءات", len(all_actions))
+                st.metric("📋 إجمالي الإجراءات", stats["total"])
             with col2:
-                # حساب عدد الموظفين الذين لديهم إجراءات
-                unique_emps = len(set(a.get("employee_name", "") for a in all_actions))
-                st.metric("👥 موظف لديه إجراءات", unique_emps)
+                st.metric("👥 موظف لديه إجراءات", stats["unique_employees"])
             with col3:
-                # عدد الإنذارات في الشهر الحالي
-                current_month = datetime.now().strftime("%Y-%m")
-                current_month_actions = [a for a in all_actions if a.get("action_date", "").startswith(current_month)]
-                st.metric("📅 هذا الشهر", len(current_month_actions))
+                st.metric("📅 هذا الشهر", stats["current_month"])
             
             st.markdown("---")
             
             # عرض جدول الإجراءات
+            all_actions = load_actions()
             if all_actions:
                 df_actions = pd.DataFrame(all_actions)
-                # اختيار الأعمدة المناسبة
                 display_cols = ["employee_name", "action_date", "warning_type", "reason", "deduction_days"]
                 available_cols = [c for c in display_cols if c in df_actions.columns]
                 
@@ -592,7 +581,6 @@ def render_settings(df_emp, df_kpi, df_data):
             
             with op1:
                 with st.expander("➕ إضافة إجراء جديد"):
-                    # جلب أسماء الموظفين من قاعدة البيانات الرئيسية
                     if df_emp is not None and not df_emp.empty:
                         emp_names = sorted(df_emp["EmployeeName"].dropna().astype(str).str.strip().tolist())
                     else:
@@ -606,16 +594,9 @@ def render_settings(df_emp, df_kpi, df_data):
                     
                     if st.button("💾 إضافة الإجراء"):
                         if new_emp and new_emp != "لا يوجد موظفين":
-                            # جلب رقم الموظف إذا موجود
-                            emp_id = ""
-                            if df_emp is not None:
-                                emp_row = df_emp[df_emp["EmployeeName"] == new_emp]
-                                if not emp_row.empty and "emp_id" in emp_row.columns:
-                                    emp_id = str(emp_row.iloc[0].get("emp_id", ""))
-                            
                             add_action(
                                 emp_name=new_emp,
-                                emp_id=emp_id,
+                                emp_id="",
                                 action_date=new_date.strftime("%Y-%m-%d"),
                                 warning_type=new_type,
                                 reason=new_reason,
@@ -630,21 +611,46 @@ def render_settings(df_emp, df_kpi, df_data):
                 with st.expander("📥 استيراد من Excel"):
                     uploaded = st.file_uploader("اختر ملف Excel", type=["xlsx", "xls"])
                     if uploaded:
-                        success, msg = import_from_excel(uploaded)
-                        if success:
-                            st.success(msg)
-                            st.rerun()
-                        else:
-                            st.error(msg)
+                        clear_old = st.checkbox("🗑️ مسح الإجراءات القديمة قبل الاستيراد", value=False)
+                        if st.button("بدء الاستيراد"):
+                            success, msg = import_from_excel(uploaded, clear_old=clear_old)
+                            if success:
+                                st.success(msg)
+                                st.rerun()
+                            else:
+                                st.error(msg)
             
             with op3:
                 with st.expander("📤 تصدير إلى Excel"):
+                    # خيارات التصدير حسب السنة والشهر
+                    years = get_unique_years()
+                    if years:
+                        export_year = st.selectbox("السنة", ["-- الكل --"] + years)
+                        if export_year != "-- الكل --":
+                            months = get_months_with_actions(export_year)
+                            export_month = st.selectbox("الشهر", ["-- الكل --"] + months)
+                        else:
+                            export_month = "-- الكل --"
+                            export_year = None
+                    else:
+                        export_year = None
+                        export_month = "-- الكل --"
+                    
                     if st.button("إنشاء ملف Excel"):
-                        buf = export_to_excel()
+                        if export_year and export_month != "-- الكل --":
+                            buf = export_to_excel(year=export_year, month=export_month)
+                            filename = f"disciplinary_{export_year}_{export_month}.xlsx"
+                        elif export_year:
+                            buf = export_to_excel(year=export_year)
+                            filename = f"disciplinary_{export_year}.xlsx"
+                        else:
+                            buf = export_to_excel()
+                            filename = f"disciplinary_all.xlsx"
+                        
                         st.download_button(
                             "⬇️ تحميل",
                             data=buf,
-                            file_name=f"disciplinary_actions_{date.today()}.xlsx",
+                            file_name=filename,
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
             
@@ -661,6 +667,16 @@ def render_settings(df_emp, df_kpi, df_data):
                             st.rerun()
                     else:
                         st.info("لا توجد إجراءات للحذف")
+            
+            st.markdown("---")
+            
+            # تنظيف كامل (بحذر)
+            with st.expander("⚠️ تنظيف كامل (استخدام بحذر)"):
+                st.warning("⚠️ تحذير: هذا الإجراء يمسح **جميع** الإجراءات التأديبية نهائياً")
+                if st.button("🗑️ حذف جميع الإجراءات", type="secondary"):
+                    clear_all_actions()
+                    st.success("✅ تم حذف جميع الإجراءات")
+                    st.rerun()
 
     # ══════════════════════════════════════════════════════════════════
     # قاعدة البيانات
