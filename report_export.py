@@ -8,6 +8,7 @@ from constants import *
 from calculations import verbal_grade, kpi_score_to_pct, rating_label
 from excel_reports import print_preview_html
 
+# ========== دالة بناء شيت الموظف (مع دعم الإجراءات) ==========
 def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, monthly_scores, notes="", training="", chart_img=None, disciplinary_actions=None, employee_id=""):
     safe = emp_name[:28]
     if safe in [s.title for s in wb.worksheets]:
@@ -180,7 +181,7 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
     r+=1
     ws.row_dimensions[r].height = 3; r+=1
 
-    # الإجراءات التأديبية
+    # ========== الإجراءات التأديبية ==========
     if disciplinary_actions is not None and not disciplinary_actions.empty:
         ws.row_dimensions[r].height = 18
         mc(r,1,r,4,"⚠️ الإجراءات التأديبية المسجلة", bold=True, color="FFFFFF", bg="B91C1C", ah="center")
@@ -225,4 +226,87 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
     ws.page_margins = PageMargins(left=0.5,right=0.5,top=0.5,bottom=0.5)
     ws.print_options.horizontalCentered = True
     ws.print_options.verticalCentered = True
+    return ws
+
+# ========== دالة بناء شيت الملخص (للتقارير الجماعية) ==========
+def build_summary_sheet(wb, rows, title="ملخص التقييم", year=None, chart_img=None):
+    ws = wb.create_sheet(title[:28])
+    ws.sheet_view.rightToLeft = True
+    ws.sheet_view.showGridLines = False
+
+    DARK = "1F3864"
+    LGRAY = "F2F2F2"
+    WHITE = "FFFFFF"
+    YELLOW = "FFF2CC"
+    GREEN_BG = "E2EFDA"
+    RED_BG = "FFDAD9"
+
+    for col, w in [("A", 4), ("B", 32), ("C", 14), ("D", 8), ("E", 10), ("F", 13), ("G", 13)]:
+        ws.column_dimensions[col].width = w
+
+    ws.row_dimensions[1].height = 36
+    mc(ws, 1, 1, 1, 7, title, bold=True, sz=12, color="FFFFFF", bg=DARK, ah="center", av="center", brd="outer")
+
+    import os as _os2
+    from openpyxl.drawing.image import Image as XLImg2
+    _logo2 = globals().get("LOGO_PATH", "logo.png")
+    if _logo2 and _os2.path.exists(_logo2):
+        try:
+            _img = XLImg2(_logo2)
+            _img.height = 32
+            _img.width = 26
+            _img.anchor = "G1"
+            ws.add_image(_img)
+        except:
+            pass
+
+    ws.row_dimensions[2].height = 4
+    ws.row_dimensions[3].height = 16
+    def _sc(cell, val=None, bold=False, sz=9, color="000000", bg=None, ah="right", av="center", brd="inner"):
+        if val is not None: cell.value = val
+        cell.font = Font(name="Arial", bold=bold, size=sz, color=color)
+        cell.alignment = Alignment(horizontal=ah, vertical=av, readingOrder=2)
+        if bg: cell.fill = PatternFill("solid", fgColor=bg)
+        if brd == "outer": cell.border = OUTER_B
+        else: cell.border = INNER_B
+    def _mc(ws, r1, c1, r2, c2, val=None, **kw):
+        ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
+        _sc(ws.cell(r1, c1, val), **kw)
+
+    for c, t in [(1, "#"), (2, "اسم الموظف"), (3, "القسم"), (4, "السنة"), (5, "الأشهر"), (6, "المعدل %"), (7, "التقييم")]:
+        _sc(ws.cell(3, c, t), bold=True, sz=9, color="FFFFFF", bg=DARK, ah="center", brd="outer")
+
+    for i, (name, dept, months, pct_val, verb) in enumerate(rows, 4):
+        ws.row_dimensions[i].height = 16
+        rbg = LGRAY if i % 2 == 0 else WHITE
+        sc_c = "375623" if pct_val >= 80 else ("C00000" if pct_val < 60 else "000000")
+        vbg = GREEN_BG if pct_val >= 80 else (YELLOW if pct_val >= 70 else (RED_BG if pct_val < 60 else LGRAY))
+        _sc(ws.cell(i, 1, i - 3), sz=8, ah="center", bg=rbg, brd="inner")
+        _sc(ws.cell(i, 2, name), sz=9, ah="right", bg=rbg, brd="inner")
+        _sc(ws.cell(i, 3, dept), sz=8, ah="center", bg=rbg, brd="inner")
+        _sc(ws.cell(i, 4, year or ""), sz=9, ah="center", bg=rbg, brd="inner")
+        _sc(ws.cell(i, 5, months), sz=9, ah="center", bg=rbg, brd="inner")
+        _sc(ws.cell(i, 6, f"{pct_val:.1f}%"), sz=10, bold=True, color=sc_c, ah="center", bg=vbg, brd="inner")
+        _sc(ws.cell(i, 7, verb), sz=9, bold=True, color=sc_c, ah="center", bg=vbg, brd="inner")
+
+    last = 3 + len(rows)
+    for r in range(3, last + 1):
+        lft = ws.cell(r, 1).border
+        ws.cell(r, 1).border = Border(left=thick_s, right=lft.right, top=lft.top, bottom=lft.bottom)
+        rgt = ws.cell(r, 7).border
+        ws.cell(r, 7).border = Border(left=rgt.left, right=thick_s, top=rgt.top, bottom=rgt.bottom)
+    for c in range(1, 8):
+        b = ws.cell(last, c).border
+        ws.cell(last, c).border = Border(left=b.left, right=b.right, top=b.top, bottom=thick_s)
+
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.paperSize = 9
+    ws.page_setup.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 1
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_margins = PageMargins(left=0.5, right=0.5, top=0.5, bottom=0.5)
+    ws.print_options.horizontalCentered = True
+    ws.print_options.verticalCentered = True
+
     return ws
