@@ -94,20 +94,48 @@ def render_employee_report(df_emp, df_kpi, df_data):
             monthly_rep.append((idx+1, short, score, ev, nm, tr))
 
     done2 = [(n,m,s) for n,m,s,*_ in monthly_rep if s > 0]
-    kpis2 = get_kpi_avgs(df_data, df_kpi, sel2, job2, months_en_f, sel2_year)
-
-    # فصل مؤشرات الأداء الوظيفي عن الصفات الشخصية
-    job_kpis2 = [(k,w,g) for k,w,g in kpis2 if k not in PERSONAL_KPIS]
-    pers_kpis2 = [(k,w,g) for k,w,g in kpis2 if k in PERSONAL_KPIS]
     
-    # ✅ إذا لم تكن هناك صفات شخصية من get_kpi_avgs، نحاول جلبها من df_kpi مباشرة
-    if not pers_kpis2:
-        # جلب جميع مؤشرات الصفات الشخصية للوظيفة من df_kpi
-        personal_kpis_from_df = df_kpi[(df_kpi["JobTitle"] == job2) & (df_kpi["KPI_Name"].isin(PERSONAL_KPIS))]
-        for _, row in personal_kpis_from_df.iterrows():
+    # ========== جلب مؤشرات الأداء الوظيفي ==========
+    job_kpis2 = []
+    job_kpis_df = df_kpi[df_kpi["JobTitle"] == job2]
+    for _, row in job_kpis_df.iterrows():
+        kpi_name = row["KPI_Name"]
+        if kpi_name in PERSONAL_KPIS:
+            continue
+        weight = float(row["Weight"])
+        # حساب متوسط الدرجة لهذا المؤشر عبر الأشهر
+        scores = []
+        for en in MONTHS_EN:
+            if months_en_f and en not in months_en_f:
+                continue
+            mask = (df_data["EmployeeName"] == sel2) & (df_data["Month"] == en) & (df_data["Year"] == int(sel2_year)) & (df_data["KPI_Name"] == kpi_name)
+            sub = df_data[mask]
+            if not sub.empty:
+                scores.append(sub["KPI_%"].sum())
+        avg_score = sum(scores) / len(scores) if scores else 0.0
+        job_kpis2.append((kpi_name, weight, avg_score))
+    
+    # ========== جلب مؤشرات الصفات الشخصية (بنفس الطريقة) ==========
+    pers_kpis2 = []
+    personal_kpis_df = df_kpi[(df_kpi["JobTitle"] == job2) & (df_kpi["KPI_Name"].isin(PERSONAL_KPIS))]
+    # إذا لم توجد صفات شخصية للوظيفة، استخدم القائمة الثابتة مع الوزن الافتراضي
+    if personal_kpis_df.empty:
+        for kpi_name in PERSONAL_KPIS:
+            weight = PERSONAL_WEIGHT
+            scores = []
+            for en in MONTHS_EN:
+                if months_en_f and en not in months_en_f:
+                    continue
+                mask = (df_data["EmployeeName"] == sel2) & (df_data["Month"] == en) & (df_data["Year"] == int(sel2_year)) & (df_data["KPI_Name"] == kpi_name)
+                sub = df_data[mask]
+                if not sub.empty:
+                    scores.append(sub["KPI_%"].sum())
+            avg_score = sum(scores) / len(scores) if scores else 0.0
+            pers_kpis2.append((kpi_name, weight, avg_score))
+    else:
+        for _, row in personal_kpis_df.iterrows():
             kpi_name = row["KPI_Name"]
             weight = float(row["Weight"])
-            # حساب متوسط الدرجة لهذا المؤشر عبر الأشهر
             scores = []
             for en in MONTHS_EN:
                 if months_en_f and en not in months_en_f:
