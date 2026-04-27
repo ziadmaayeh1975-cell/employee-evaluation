@@ -1,6 +1,6 @@
 """
 data_loader.py — يقرأ من قاعدة البيانات أولاً، Excel احتياطياً
-مع دعم عمود "رقم الموظف" في شيت EMPLOYEES (يتعرف على الأسماء تلقائياً)
+مع دعم الأعمدة ديناميكياً في شيتي EMPLOYEES و KPIs
 """
 import pandas as pd
 import streamlit as st
@@ -15,7 +15,7 @@ except ImportError:
 
 
 def _map_employee_columns(df_emp):
-    """إعادة تسمية الأعمدة ديناميكياً بغض النظر عن الحروف (كبيرة/صغيرة)"""
+    """إعادة تسمية أعمدة EMPLOYEES ديناميكياً"""
     mapping = {}
     for col in df_emp.columns:
         col_lower = str(col).strip().lower()
@@ -32,11 +32,25 @@ def _map_employee_columns(df_emp):
     return df_emp.rename(columns=mapping)
 
 
+def _map_kpi_columns(df_kpi):
+    """إعادة تسمية أعمدة KPIs ديناميكياً بغض النظر عن الترتيب"""
+    mapping = {}
+    for col in df_kpi.columns:
+        col_lower = str(col).strip().lower()
+        if "jobtitle" in col_lower or "الوظيفة" in col_lower:
+            mapping[col] = "JobTitle"
+        elif "kpi_name" in col_lower or "اسم المؤشر" in col_lower or "المؤشر" in col_lower:
+            mapping[col] = "KPI_Name"
+        elif "weight" in col_lower or "الوزن" in col_lower:
+            mapping[col] = "Weight"
+    return df_kpi.rename(columns=mapping)
+
+
 @st.cache_data(ttl=30)
 def load_data():
     if _DB_AVAILABLE and db_exists():
         return load_data_from_db()
-    # ── احتياطي: Excel ──────────────────────────────────────
+    
     try:
         import openpyxl
         df_emp = pd.read_excel(FILE_PATH, sheet_name="EMPLOYEES")
@@ -44,28 +58,38 @@ def load_data():
         df_data = pd.read_excel(FILE_PATH, sheet_name="DATA")
         
         for df in [df_emp, df_kpi, df_data]:
-            df.columns = [str(c).strip() for c in df.columns]
-            for col in df.select_dtypes("object").columns:
-                df[col] = df[col].astype(str).str.strip()
+            if not df.empty:
+                df.columns = [str(c).strip() for c in df.columns]
+                for col in df.select_dtypes("object").columns:
+                    df[col] = df[col].astype(str).str.strip()
         
-        # ✅ إعادة تسمية أعمدة EMPLOYEES ديناميكياً
+        # ✅ إعادة تسمية أعمدة EMPLOYEES
         df_emp = _map_employee_columns(df_emp)
         
-        # ✅ التأكد من وجود الأعمدة الأساسية بعد إعادة التسمية
-        required_cols = ["رقم الموظف", "EmployeeName", "JobTitle", "القسم", "اسم المقيم"]
-        missing = [col for col in required_cols if col not in df_emp.columns]
-        if missing:
-            st.error(f"⚠️ الأعمدة المطلوبة غير موجودة: {missing}")
+        # ✅ إعادة تسمية أعمدة KPIs
+        df_kpi = _map_kpi_columns(df_kpi)
+        
+        # ✅ التأكد من وجود الأعمدة الأساسية
+        required_emp_cols = ["رقم الموظف", "EmployeeName", "JobTitle", "القسم", "اسم المقيم"]
+        missing_emp = [col for col in required_emp_cols if col not in df_emp.columns]
+        if missing_emp:
+            st.error(f"⚠️ الأعمدة المطلوبة غير موجودة في EMPLOYEES: {missing_emp}")
             return None, None, None
         
-        # ترتيب الأعمدة المطلوب
-        df_emp = df_emp[required_cols]
+        required_kpi_cols = ["JobTitle", "KPI_Name", "Weight"]
+        missing_kpi = [col for col in required_kpi_cols if col not in df_kpi.columns]
+        if missing_kpi:
+            st.error(f"⚠️ الأعمدة المطلوبة غير موجودة في KPIs: {missing_kpi}")
+            return None, None, None
         
-        # توحيد أسماء أعمدة DATA
+        # ترتيب الأعمدة
+        df_emp = df_emp[required_emp_cols]
+        df_kpi = df_kpi[required_kpi_cols]
+        
+        # معالجة DATA
         if "Nots" in df_data.columns and "Notes" not in df_data.columns:
             df_data.rename(columns={"Nots": "Notes"}, inplace=True)
         
-        # أعمدة اختيارية
         if "Year" not in df_data.columns:
             df_data["Year"] = 2025
         else:
@@ -90,7 +114,7 @@ def save_evaluation(emp_name, month_ar, year, manager, dept,
         if ok:
             load_data.clear()
         return ok, err
-    # ── احتياطي: Excel ──────────────────────────────────────
+    
     try:
         import openpyxl
         wb = openpyxl.load_workbook(FILE_PATH, keep_vba=True)
