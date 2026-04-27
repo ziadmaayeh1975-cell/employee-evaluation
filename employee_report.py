@@ -129,7 +129,17 @@ def render_employee_report(df_emp, df_kpi, df_data):
         _fb = get_emp_notes(sel2)
         notes2, training2 = _fb[0] if len(_fb)>0 else "", _fb[1] if len(_fb)>1 else ""
 
-    # معلومات الموظف (مرة واحدة)
+    # ✅ جلب الإجراءات التأديبية للموظف من قاعدة البيانات
+    disciplinary_df = None
+    try:
+        from disciplinary_manager import get_actions_by_employee
+        disc_actions_list = get_actions_by_employee(sel2, sel2_year)
+        if disc_actions_list:
+            disciplinary_df = pd.DataFrame(disc_actions_list)
+    except Exception as e:
+        st.warning(f"⚠️ خطأ في تحميل الإجراءات التأديبية: {e}")
+
+    # معلومات الموظف
     st.markdown(f"""
     <div style="background:#F8FAFC;border:1px solid #CBD5E1;border-radius:12px;padding:16px;margin-bottom:10px;direction:rtl;">
         <h2 style="margin:0 0 4px;color:#1E3A8A;">{sel2}</h2>
@@ -148,7 +158,6 @@ def render_employee_report(df_emp, df_kpi, df_data):
     </div>
     """, unsafe_allow_html=True)
 
-    # متوسطات المؤشرات
     col1, col2 = st.columns(2)
     with col1:
         st.markdown(f"""
@@ -193,16 +202,20 @@ def render_employee_report(df_emp, df_kpi, df_data):
         else:
             st.info("لا توجد مؤشرات")
 
-        # الإجراءات التأديبية (إن وجدت)
-        try:
-            from disciplinary_manager import get_actions_by_employee
-            disc_actions = get_actions_by_employee(sel2, sel2_year)
-            if disc_actions:
-                st.subheader("⚠️ الإجراءات التأديبية")
-                disc_df = pd.DataFrame([{"التاريخ":a.get("action_date",""),"نوع الإنذار":a.get("warning_type",""),"السبب":a.get("reason",""),"خصم (أيام)":a.get("deduction_days",0)} for a in disc_actions])
-                st.dataframe(disc_df, use_container_width=True, hide_index=True)
-        except:
-            pass
+        # ✅ عرض الإجراءات التأديبية في الواجهة
+        if disciplinary_df is not None and not disciplinary_df.empty:
+            st.subheader("⚠️ الإجراءات التأديبية المسجلة")
+            disc_display = disciplinary_df.copy()
+            disc_display = disc_display.rename(columns={
+                "action_date": "التاريخ",
+                "warning_type": "نوع الإنذار",
+                "reason": "السبب",
+                "deduction_days": "خصم (أيام)"
+            })
+            cols_to_show = ["التاريخ", "نوع الإنذار", "السبب", "خصم (أيام)"]
+            available_cols = [c for c in cols_to_show if c in disc_display.columns]
+            if available_cols:
+                st.dataframe(disc_display[available_cols], use_container_width=True, hide_index=True)
 
         # ملاحظات وتدريب
         cn, ct = st.columns(2)
@@ -228,9 +241,14 @@ def render_employee_report(df_emp, df_kpi, df_data):
     st.subheader("⬇️ تحميل التقرير")
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
-    # تجهيز الـ kpis للتصدير
     kpis_export = [{"KPI_Name":k,"Weight":w,"avg_score":g} for k,w,g in job_kpis2+pers_kpis2]
-    build_employee_sheet(wb, sel2, job2, dept2, mgr2, sel2_year, kpis_export, monthly_rep, notes2, training2, employee_id=emp_id)
+    # ✅ تمرير الإجراءات إلى build_employee_sheet
+    build_employee_sheet(
+        wb, sel2, job2, dept2, mgr2, sel2_year,
+        kpis_export, monthly_rep, notes2, training2,
+        employee_id=emp_id,
+        disciplinary_actions=disciplinary_df
+    )
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
