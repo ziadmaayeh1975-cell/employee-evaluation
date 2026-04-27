@@ -91,17 +91,14 @@ def render_entry(df_emp, df_kpi, df_data):
     current_reviewer = get_current_reviewer()
     is_super_admin   = (role == "super_admin")
     is_admin         = (role in ("admin", "super_admin"))
-    reviewer_col     = df_emp.columns[3] if len(df_emp.columns) > 3 else df_emp.columns[-1]
+    reviewer_col     = "اسم المقيم"  # استخدام الاسم الصريح للعمود
 
     r1c1, r1c2, r1c3 = st.columns(3)
 
     with r1c1:
         if is_super_admin:
-            reviewer_list = sorted([r for r in
-                df_emp[reviewer_col].dropna().astype(str).str.strip().unique()
-                if r not in ("","nan")])
-            sel_reviewer = st.selectbox("👨‍💼 اسم المقيم",
-                ["-- اختر المقيم --"] + reviewer_list, key="sel_reviewer")
+            reviewer_list = sorted(df_emp[reviewer_col].dropna().astype(str).str.strip().unique().tolist())
+            sel_reviewer = st.selectbox("👨‍💼 اسم المقيم", ["-- اختر المقيم --"] + reviewer_list, key="sel_reviewer")
         elif is_admin:
             if current_reviewer:
                 sel_reviewer = current_reviewer
@@ -109,11 +106,8 @@ def render_entry(df_emp, df_kpi, df_data):
                     border-radius:8px;border-right:4px solid #1E3A8A;">
                     <b>👨‍💼 المقيم:</b> {sel_reviewer}</div>""", unsafe_allow_html=True)
             else:
-                reviewer_list = sorted([r for r in
-                    df_emp[reviewer_col].dropna().astype(str).str.strip().unique()
-                    if r not in ("","nan")])
-                sel_reviewer = st.selectbox("👨‍💼 اسم المقيم",
-                    ["-- اختر المقيم --"] + reviewer_list, key="sel_reviewer")
+                reviewer_list = sorted(df_emp[reviewer_col].dropna().astype(str).str.strip().unique().tolist())
+                sel_reviewer = st.selectbox("👨‍💼 اسم المقيم", ["-- اختر المقيم --"] + reviewer_list, key="sel_reviewer")
         else:
             if not current_reviewer:
                 st.warning("⚠️ لم يتم ربط حسابك بمقيم. تواصل مع المدير.")
@@ -128,26 +122,17 @@ def render_entry(df_emp, df_kpi, df_data):
         if not reviewer_chosen:
             emp_list = []
         else:
-            rev = sel_reviewer
-            emp_list = [str(e).strip() for e in
-                df_emp[df_emp[reviewer_col].astype(str).str.strip() == rev
-                ]["EmployeeName"].dropna().tolist()
-                if str(e).strip() not in ("","nan")]
+            emp_list = df_emp[df_emp[reviewer_col].astype(str).str.strip() == sel_reviewer]["EmployeeName"].dropna().astype(str).str.strip().tolist()
             if is_super_admin and not emp_list:
-                emp_list = sorted([str(e).strip() for e in
-                    df_emp["EmployeeName"].dropna().tolist()
-                    if str(e).strip() not in ("","nan")])
-
-        sel_emp = st.selectbox("🎯 اسم الموظف",
-            ["-- اختر --"] + emp_list, key="sel_emp")
+                emp_list = df_emp["EmployeeName"].dropna().astype(str).str.strip().tolist()
+        sel_emp = st.selectbox("🎯 اسم الموظف", ["-- اختر --"] + emp_list, key="sel_emp")
 
     with r1c3:
         sel_year = st.selectbox("🗓️ السنة", [2025, 2026, 2027])
 
     sel_month = st.selectbox("📅 شهر التقييم", MONTHS_AR)
 
-    if not is_super_admin and is_admin and not current_reviewer \
-            and sel_reviewer == "-- اختر المقيم --":
+    if not is_super_admin and is_admin and not current_reviewer and sel_reviewer == "-- اختر المقيم --":
         st.info("⬆️ اختر المقيم أولاً.")
         return
 
@@ -184,25 +169,24 @@ def render_entry(df_emp, df_kpi, df_data):
         st.info("⬆️ اختر الموظف.")
         return
 
+    # البحث عن بيانات الموظف باستخدام الأسماء الصريحة للأعمدة
     emp_row = df_emp[df_emp["EmployeeName"] == sel_emp]
     if emp_row.empty:
         st.warning("⚠️ لم يُعثر على بيانات هذا الموظف.")
         return
-    emp_row   = emp_row.iloc[0]
-    job_title = str(emp_row.iloc[1]).strip()
-    dept_name = str(emp_row.iloc[2]).strip()
-    mgr_name  = str(emp_row.iloc[3]).strip()
+    emp_row = emp_row.iloc[0]
     
-    # جلب رقم الموظف إذا كان موجوداً في df_emp
-    emp_id = ""
-    if "رقم الموظف" in df_emp.columns:
-        emp_id = str(emp_row.get("رقم الموظف", ""))
+    # قراءة البيانات باستخدام أسماء الأعمدة (وليس المواقع)
+    emp_id = str(emp_row.get("رقم الموظف", ""))
+    job_title = str(emp_row.get("JobTitle", ""))
+    dept_name = str(emp_row.get("القسم", ""))
+    mgr_name = str(emp_row.get("اسم المقيم", ""))
 
     if not df_data.empty and "EmployeeName" in df_data.columns:
         dup = df_data[
             (df_data["EmployeeName"] == sel_emp) &
-            (df_data["Month"]        == MONTH_MAP.get(sel_month, sel_month)) &
-            (df_data["Year"]         == int(sel_year))
+            (df_data["Month"] == MONTH_MAP.get(sel_month, sel_month)) &
+            (df_data["Year"] == int(sel_year))
         ]
         if not dup.empty:
             st.error(f"⚠️ يوجد تقييم محفوظ لـ ({sel_emp}) في {sel_month} {sel_year}.")
@@ -234,8 +218,8 @@ def render_entry(df_emp, df_kpi, df_data):
             # تحميل جميع الإجراءات من قاعدة البيانات
             all_actions = load_disciplinary_actions()
             if all_actions:
-                # تحويل اسم الشهر العربي إلى رقم الشهر (للمقارنة مع قاعدة البيانات)
-                month_number = MONTHS_AR.index(sel_month) + 1  # يناير = 1, فبراير = 2, إلخ
+                # تحويل اسم الشهر العربي إلى رقم الشهر للمقارنة
+                month_number = MONTHS_AR.index(sel_month) + 1
                 
                 # جلب الإجراءات التي تطابق الموظف والسنة والشهر المحدد
                 disc_actions = get_employee_disciplinary(sel_emp, sel_year, month_number)
@@ -270,7 +254,7 @@ def render_entry(df_emp, df_kpi, df_data):
         st.warning(f"⚠️ لا توجد مؤشرات KPI لوظيفة '{job_title}'.")
         return
 
-    job_kpis  = kpi_rows_raw[~kpi_rows_raw["KPI_Name"].isin(PERSONAL_KPIS)]
+    job_kpis = kpi_rows_raw[~kpi_rows_raw["KPI_Name"].isin(PERSONAL_KPIS)]
     pers_kpis = kpi_rows_raw[kpi_rows_raw["KPI_Name"].isin(PERSONAL_KPIS)]
 
     # تحميل المسودة إن وجدت
@@ -296,9 +280,9 @@ def render_entry(df_emp, df_kpi, df_data):
     job_total_weight = 0.0
 
     for i, (_, row) in enumerate(job_kpis.iterrows()):
-        kname  = str(row["KPI_Name"]).strip()
+        kname = str(row["KPI_Name"]).strip()
         weight = float(row["Weight"])
-        bg     = COLORS[i % len(COLORS)]
+        bg = COLORS[i % len(COLORS)]
         
         draft_val = draft["job_pct_values"].get(kname, 0.0) if draft else 0.0
 
@@ -367,9 +351,9 @@ def render_entry(df_emp, df_kpi, df_data):
         pd.DataFrame([{"KPI_Name": k, "Weight": PERSONAL_WEIGHT} for k in PERSONAL_KPIS])
 
     for i, (_, row) in enumerate(pers_source.iterrows()):
-        kname  = str(row["KPI_Name"]).strip()
+        kname = str(row["KPI_Name"]).strip()
         weight = float(row["Weight"])
-        bg     = COLORS[(i+5) % len(COLORS)]
+        bg = COLORS[(i+5) % len(COLORS)]
         
         draft_val2 = draft["pers_pct_values"].get(kname, 0.0) if draft else 0.0
 
@@ -425,7 +409,7 @@ def render_entry(df_emp, df_kpi, df_data):
     
     grand_total = job_total + pers_total
     verb = verbal_grade(grand_total)
-    clr  = grade_color_hex(grand_total)
+    clr = grade_color_hex(grand_total)
 
     st.markdown(f"""
     <div style="background:#F8FAFC;border:1px solid #CBD5E1;border-radius:12px;
@@ -458,11 +442,11 @@ def render_entry(df_emp, df_kpi, df_data):
     st.markdown("---")
     col_n, col_t = st.columns(2)
     with col_n:
-        notes_val    = draft["notes"] if draft else ""
-        notes        = st.text_area("📝 ملاحظات المقيم", value=notes_val, key="notes_inp", height=80)
+        notes_val = draft["notes"] if draft else ""
+        notes = st.text_area("📝 ملاحظات المقيم", value=notes_val, key="notes_inp", height=80)
     with col_t:
         training_val = draft["training"] if draft else ""
-        training     = st.text_area("🎓 الاحتياجات التدريبية", value=training_val, key="train_inp", height=80)
+        training = st.text_area("🎓 الاحتياجات التدريبية", value=training_val, key="train_inp", height=80)
 
     rev_name = sel_reviewer if (sel_reviewer != "-- اختر المقيم --") else mgr_name
 
