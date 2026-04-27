@@ -8,7 +8,7 @@ try:
     PLOTLY_OK = True
 except ImportError:
     PLOTLY_OK = False
-from constants import MONTHS_AR, MONTHS_EN, MONTHS_SHORT, MONTH_MAP, PERSONAL_KPIS
+from constants import MONTHS_AR, MONTHS_EN, MONTHS_SHORT, MONTH_MAP, PERSONAL_KPIS, PERSONAL_WEIGHT
 from calculations import calc_monthly, get_kpi_avgs, verbal_grade, grade_color_hex, kpi_score_to_pct, rating_label
 from data_loader import get_emp_notes
 from auth import get_current_reviewer, get_current_role
@@ -96,8 +96,28 @@ def render_employee_report(df_emp, df_kpi, df_data):
     done2 = [(n,m,s) for n,m,s,*_ in monthly_rep if s > 0]
     kpis2 = get_kpi_avgs(df_data, df_kpi, sel2, job2, months_en_f, sel2_year)
 
+    # فصل مؤشرات الأداء الوظيفي عن الصفات الشخصية
     job_kpis2 = [(k,w,g) for k,w,g in kpis2 if k not in PERSONAL_KPIS]
     pers_kpis2 = [(k,w,g) for k,w,g in kpis2 if k in PERSONAL_KPIS]
+    
+    # ✅ إذا لم تكن هناك صفات شخصية من get_kpi_avgs، نحاول جلبها من df_kpi مباشرة
+    if not pers_kpis2:
+        # جلب جميع مؤشرات الصفات الشخصية للوظيفة من df_kpi
+        personal_kpis_from_df = df_kpi[(df_kpi["JobTitle"] == job2) & (df_kpi["KPI_Name"].isin(PERSONAL_KPIS))]
+        for _, row in personal_kpis_from_df.iterrows():
+            kpi_name = row["KPI_Name"]
+            weight = float(row["Weight"])
+            # حساب متوسط الدرجة لهذا المؤشر عبر الأشهر
+            scores = []
+            for en in MONTHS_EN:
+                if months_en_f and en not in months_en_f:
+                    continue
+                mask = (df_data["EmployeeName"] == sel2) & (df_data["Month"] == en) & (df_data["Year"] == int(sel2_year)) & (df_data["KPI_Name"] == kpi_name)
+                sub = df_data[mask]
+                if not sub.empty:
+                    scores.append(sub["KPI_%"].sum())
+            avg_score = sum(scores) / len(scores) if scores else 0.0
+            pers_kpis2.append((kpi_name, weight, avg_score))
 
     avg2 = sum(s for _,_,s in done2)/len(done2) if done2 else 0.0
     pct2 = avg2 * 100
@@ -129,7 +149,7 @@ def render_employee_report(df_emp, df_kpi, df_data):
         _fb = get_emp_notes(sel2)
         notes2, training2 = _fb[0] if len(_fb)>0 else "", _fb[1] if len(_fb)>1 else ""
 
-    # ✅ جلب الإجراءات التأديبية للموظف من قاعدة البيانات
+    # جلب الإجراءات التأديبية
     disciplinary_df = None
     try:
         from disciplinary_manager import get_actions_by_employee
@@ -137,9 +157,9 @@ def render_employee_report(df_emp, df_kpi, df_data):
         if disc_actions_list:
             disciplinary_df = pd.DataFrame(disc_actions_list)
     except Exception as e:
-        st.warning(f"⚠️ خطأ في تحميل الإجراءات التأديبية: {e}")
+        st.warning(f"⚠️ خطأ في الإجراءات التأديبية: {e}")
 
-    # معلومات الموظف
+    # عرض معلومات الموظف
     st.markdown(f"""
     <div style="background:#F8FAFC;border:1px solid #CBD5E1;border-radius:12px;padding:16px;margin-bottom:10px;direction:rtl;">
         <h2 style="margin:0 0 4px;color:#1E3A8A;">{sel2}</h2>
@@ -192,7 +212,7 @@ def render_employee_report(df_emp, df_kpi, df_data):
             job_df = pd.DataFrame([{"المؤشر":k,"الوزن (%)":w,"الدرجة (0-100)":round(kpi_score_to_pct(g,w),1),"التقييم":rating_label(kpi_score_to_pct(g,w))} for k,w,g in job_kpis2])
             st.dataframe(job_df, use_container_width=True, hide_index=True)
         else:
-            st.info("لا توجد مؤشرات")
+            st.info("لا توجد مؤشرات أداء وظيفي")
 
         # مؤشرات الصفات الشخصية
         st.subheader("🌟 مؤشرات الصفات الشخصية")
@@ -200,9 +220,9 @@ def render_employee_report(df_emp, df_kpi, df_data):
             pers_df = pd.DataFrame([{"المؤشر":k,"الوزن (%)":w,"الدرجة (0-100)":round(kpi_score_to_pct(g,w),1),"التقييم":rating_label(kpi_score_to_pct(g,w))} for k,w,g in pers_kpis2])
             st.dataframe(pers_df, use_container_width=True, hide_index=True)
         else:
-            st.info("لا توجد مؤشرات")
+            st.info("لا توجد مؤشرات صفات شخصية")
 
-        # ✅ عرض الإجراءات التأديبية في الواجهة
+        # الإجراءات التأديبية
         if disciplinary_df is not None and not disciplinary_df.empty:
             st.subheader("⚠️ الإجراءات التأديبية المسجلة")
             disc_display = disciplinary_df.copy()
@@ -242,7 +262,6 @@ def render_employee_report(df_emp, df_kpi, df_data):
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
     kpis_export = [{"KPI_Name":k,"Weight":w,"avg_score":g} for k,w,g in job_kpis2+pers_kpis2]
-    # ✅ تمرير الإجراءات إلى build_employee_sheet
     build_employee_sheet(
         wb, sel2, job2, dept2, mgr2, sel2_year,
         kpis_export, monthly_rep, notes2, training2,
