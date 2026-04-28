@@ -4,13 +4,20 @@ import openpyxl
 import pandas as pd
 import streamlit as st
 from constants import MONTHS_AR, MONTHS_EN, MONTHS_SHORT, MONTH_MAP, PERSONAL_KPIS, PERSONAL_WEIGHT
-from calculations import calc_monthly, get_kpi_avgs, verbal_grade
+from calculations import calc_monthly, verbal_grade
 from data_loader import get_emp_notes
 from auth import get_current_reviewer, get_current_role
 from report_export import build_employee_sheet, build_summary_sheet, print_preview_html
 
+# ── تحميل مدير الإجراءات التأديبية مرة واحدة ──
+try:
+    from disciplinary_manager import get_actions_by_employee as _get_disc_actions
+    _DISC_AVAILABLE = True
+except Exception:
+    _DISC_AVAILABLE = False
+
+
 def _reviewer_emp_set(df_emp):
-    """تحديد الموظفين المسموح للمقيم رؤيتهم"""
     role = get_current_role()
     current_reviewer = get_current_reviewer()
     if role == "super_admin":
@@ -22,15 +29,15 @@ def _reviewer_emp_set(df_emp):
         return None
     return set(df_emp[df_emp[reviewer_col].astype(str).str.strip() == current_reviewer]["EmployeeName"].dropna().tolist())
 
+
 def _reviewer_emp_list(df_emp):
-    """قائمة الموظفين المسموح رؤيتهم"""
     allowed = _reviewer_emp_set(df_emp)
     if allowed is None:
         return df_emp["EmployeeName"].dropna().astype(str).str.strip().tolist()
     return list(allowed)
 
+
 def _safe_df(df):
-    """تأكد من وجود الأعمدة المطلوبة في DataFrame"""
     if df is None or not isinstance(df, pd.DataFrame):
         return pd.DataFrame(columns=["EmployeeName","Month","KPI_Name","Weight","KPI_%","Evaluator","Notes","Year","EvalDate","Training"])
     df = df.copy()
@@ -39,9 +46,13 @@ def _safe_df(df):
             df[col] = pd.Series(dtype="object")
     return df
 
+
 def _get_month_details(df_data, emp_name, month_en, year):
-    """استخراج تفاصيل الشهر (تاريخ التقييم، ملاحظات، تدريب)"""
-    mask = (df_data["EmployeeName"] == emp_name) & (df_data["Month"] == month_en) & (df_data["Year"] == int(year))
+    mask = (
+        (df_data["EmployeeName"] == emp_name) &
+        (df_data["Month"] == month_en) &
+        (df_data["Year"] == int(year))
+    )
     subset = df_data[mask]
     if subset.empty:
         return "", "", ""
@@ -77,14 +88,29 @@ def _get_month_details(df_data, emp_name, month_en, year):
     return eval_date, notes, training
 
 
+def _get_disciplinary(emp_name, year):
+    """جلب الإجراءات التأديبية — نفس منطق employee_report.py"""
+    if not _DISC_AVAILABLE:
+        return None
+    try:
+        disc_list = _get_disc_actions(emp_name, int(year))
+        if disc_list:
+            return pd.DataFrame(disc_list)
+    except Exception as e:
+        st.warning(f"⚠️ خطأ في جلب الإجراءات التأديبية لـ {emp_name}: {e}")
+    return None
+
+
 def _build_kpis_for_emp(df_data, df_kpi, emp, job, months_en_filter, year):
     """
     نفس منطق employee_report.py تماماً —
     يبني job_kpis و pers_kpis ويرجعهما كـ list of dicts جاهزة لـ build_employee_sheet
     """
+    job_str = str(job).strip()
+
     # ── مؤشرات الأداء الوظيفي ──
     job_kpis = []
-    job_kpis_df = df_kpi[df_kpi["JobTitle"].astype(str).str.strip() == str(job).strip()]
+    job_kpis_df = df_kpi[df_kpi["JobTitle"].astype(str).str.strip() == job_str]
     for _, row in job_kpis_df.iterrows():
         kpi_name = row["KPI_Name"]
         if kpi_name in PERSONAL_KPIS:
@@ -109,13 +135,12 @@ def _build_kpis_for_emp(df_data, df_kpi, emp, job, months_en_filter, year):
     # ── مؤشرات الصفات الشخصية ──
     pers_kpis = []
     personal_kpis_df = df_kpi[
-        (df_kpi["JobTitle"].astype(str).str.strip() == str(job).strip()) &
+        (df_kpi["JobTitle"].astype(str).str.strip() == job_str) &
         (df_kpi["KPI_Name"].isin(PERSONAL_KPIS))
     ]
     if personal_kpis_df.empty:
         # fallback: استخدم PERSONAL_KPIS مباشرة بوزن افتراضي
         for kpi_name in PERSONAL_KPIS:
-            weight = PERSONAL_WEIGHT
             scores = []
             for en in MONTHS_EN:
                 if months_en_filter and en not in months_en_filter:
@@ -130,7 +155,7 @@ def _build_kpis_for_emp(df_data, df_kpi, emp, job, months_en_filter, year):
                 if not sub.empty:
                     scores.append(sub["KPI_%"].sum())
             avg_score = sum(scores) / len(scores) if scores else 0.0
-            pers_kpis.append({"KPI_Name": kpi_name, "Weight": weight, "avg_score": avg_score})
+            pers_kpis.append({"KPI_Name": kpi_name, "Weight": PERSONAL_WEIGHT, "avg_score": avg_score})
     else:
         for _, row in personal_kpis_df.iterrows():
             kpi_name = row["KPI_Name"]
@@ -180,7 +205,9 @@ def render_department_report(df_emp, df_kpi, df_data):
     if sel_dept == "-- الكل --":
         dept_emps = dept_emps_all[emp_name_col].dropna().tolist()
     else:
-        dept_emps = dept_emps_all[dept_emps_all[dept_col].astype(str).str.strip() == sel_dept][emp_name_col].tolist()
+        dept_emps = dept_emps_all[
+            dept_emps_all[dept_col].astype(str).str.strip() == sel_dept
+        ][emp_name_col].tolist()
 
     if df_data.empty or emp_name_col not in df_data.columns:
         st.info("ℹ️ لا توجد تقييمات محفوظة حتى الآن.")
@@ -202,10 +229,10 @@ def render_department_report(df_emp, df_kpi, df_data):
         if emp_info.empty:
             continue
         emp_info = emp_info.iloc[0]
-        emp_dept   = str(emp_info.get(dept_col, "—"))
-        emp_id     = str(emp_info.get("رقم الموظف", ""))
-        job        = str(emp_info.get("JobTitle", ""))
-        reviewer   = str(emp_info.get("اسم المقيم", ""))
+        emp_dept = str(emp_info.get(dept_col, "—"))
+        emp_id   = str(emp_info.get("رقم الموظف", ""))
+        job      = str(emp_info.get("JobTitle", ""))
+        reviewer = str(emp_info.get("اسم المقيم", ""))
 
         monthly_scores = []
         for month_en in MONTHS_EN:
@@ -231,13 +258,14 @@ def render_department_report(df_emp, df_kpi, df_data):
 
     summary.sort(key=lambda x: x["pct"], reverse=True)
 
+    # ── عرض جدول الملخص ──
     st.dataframe(pd.DataFrame([{
-        "الموظف":    s["emp"],
-        "القسم":     s["dept"],
-        "السنة":     sel_year,
-        "الأشهر":    s["months"],
+        "الموظف":     s["emp"],
+        "القسم":      s["dept"],
+        "السنة":      sel_year,
+        "الأشهر":     s["months"],
         "المعدل (%)": s["pct"],
-        "التقييم":   s["verb"],
+        "التقييم":    s["verb"],
     } for s in summary]), hide_index=True, use_container_width=True)
 
     # ── بناء ملف Excel ──
@@ -245,14 +273,14 @@ def render_department_report(df_emp, df_kpi, df_data):
     wb.remove(wb.active)
 
     for s in summary:
-        # ✅ نفس منطق employee_report.py تماماً
+        # ✅ نفس منطق employee_report.py لبناء KPIs
         kpis_export = _build_kpis_for_emp(
             df_data, df_kpi,
             s["emp"], s["job"],
             months_en_filter, sel_year
         )
 
-        # البيانات الشهرية
+        # ── البيانات الشهرية ──
         monthly_rep = []
         for idx, (en, short) in enumerate(zip(MONTHS_EN, MONTHS_SHORT)):
             if months_en_filter and en not in months_en_filter:
@@ -262,7 +290,7 @@ def render_department_report(df_emp, df_kpi, df_data):
                 eval_date, notes, training = _get_month_details(df_data, s["emp"], en, sel_year)
                 monthly_rep.append((idx+1, short, score, eval_date, notes, training))
 
-        # الملاحظات والتدريب
+        # ── الملاحظات والتدريب ──
         emp_notes, emp_train = "", ""
         for item in monthly_rep:
             if item[2] > 0:
@@ -272,18 +300,12 @@ def render_department_report(df_emp, df_kpi, df_data):
         if not emp_notes and not emp_train:
             emp_notes, emp_train = get_emp_notes(s["emp"])
 
-        # الإجراءات التأديبية
-        disciplinary_df = None
-        try:
-            from disciplinary_manager import get_actions_by_employee
-            disc_list = get_actions_by_employee(s["emp"], sel_year)
-            if disc_list:
-                disciplinary_df = pd.DataFrame(disc_list)
-        except:
-            pass
+        # ✅ الإجراءات التأديبية — نفس منطق employee_report.py
+        disciplinary_df = _get_disciplinary(s["emp"], sel_year)
 
         build_employee_sheet(
-            wb, s["emp"], s["job"], s["dept"], s["reviewer"], sel_year,
+            wb,
+            s["emp"], s["job"], s["dept"], s["reviewer"], sel_year,
             kpis_export, monthly_rep, emp_notes, emp_train,
             employee_id=s["emp_id"],
             disciplinary_actions=disciplinary_df,
