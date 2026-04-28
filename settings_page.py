@@ -93,6 +93,7 @@ def render_settings(df_emp, df_kpi, df_data):
     set_tab4      = _tab_objs[3]
     set_tab_kpi   = _tab_objs[4]
     
+    # التبويبات الإضافية
     attendance_tab_index = 5
     disc_tab_index = 6 if _ATTENDANCE_OK else 5
     db_tab_index   = disc_tab_index + 1 if _DISCIPLINARY_OK else disc_tab_index
@@ -575,13 +576,13 @@ def render_settings(df_emp, df_kpi, df_data):
                 with st.expander("➕ إضافة سجل يدوي"):
                     if df_emp is not None:
                         emp_names = sorted(df_emp["EmployeeName"].dropna().tolist())
-                        emp = st.selectbox("الموظف", emp_names)
+                        emp = st.selectbox("الموظف", emp_names, key="att_emp")
                         emp_id = df_emp[df_emp["EmployeeName"]==emp].iloc[0].get("رقم الموظف", "") if emp else ""
-                        year = st.number_input("السنة", min_value=2020, max_value=2030, value=2026)
-                        month = st.selectbox("الشهر", list(range(1, 13)), format_func=lambda x: f"{x} - {['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'][x-1]}")
-                        late_count = st.number_input("عدد مرات التأخير", min_value=0, step=1)
-                        total_hours = st.number_input("إجمالي ساعات التأخير", min_value=0.0, step=0.5)
-                        if st.button("💾 إضافة"):
+                        year = st.number_input("السنة", min_value=2020, max_value=2030, value=2026, key="att_year")
+                        month = st.selectbox("الشهر", list(range(1, 13)), format_func=lambda x: f"{x} - {['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'][x-1]}", key="att_month")
+                        late_count = st.number_input("عدد مرات التأخير", min_value=0, step=1, key="att_count")
+                        total_hours = st.number_input("إجمالي ساعات التأخير", min_value=0.0, step=0.5, key="att_hours")
+                        if st.button("💾 إضافة", key="add_att_btn"):
                             if add_attendance_manual(emp, emp_id, year, month, late_count, total_hours):
                                 st.success("✅ تم الإضافة")
                                 st.rerun()
@@ -590,10 +591,10 @@ def render_settings(df_emp, df_kpi, df_data):
             
             with op2:
                 with st.expander("📥 استيراد Excel"):
-                    uploaded = st.file_uploader("اختر ملف Excel", type=["xlsx", "xls"])
+                    uploaded = st.file_uploader("اختر ملف Excel", type=["xlsx", "xls"], key="att_upload")
                     if uploaded:
-                        clear_old = st.checkbox("🗑️ مسح السجلات القديمة قبل الاستيراد")
-                        if st.button("بدء الاستيراد"):
+                        clear_old = st.checkbox("🗑️ مسح السجلات القديمة قبل الاستيراد", value=False, key="att_clear")
+                        if st.button("بدء الاستيراد", key="att_import_btn"):
                             success, msg = import_attendance_from_excel(uploaded, clear_old)
                             if success:
                                 st.success(msg)
@@ -605,19 +606,19 @@ def render_settings(df_emp, df_kpi, df_data):
                 with st.expander("📤 تصدير إلى Excel"):
                     years = get_attendance_unique_years()
                     if years:
-                        export_year = st.selectbox("السنة", ["-- الكل --"] + years)
+                        export_year = st.selectbox("السنة", ["-- الكل --"] + years, key="att_export_year")
                         export_year_val = None if export_year == "-- الكل --" else int(export_year)
-                        if st.button("إنشاء ملف Excel"):
+                        if st.button("إنشاء ملف Excel", key="att_export_btn"):
                             buf = export_attendance_to_excel(year=export_year_val)
                             filename = f"attendance_{export_year_val}.xlsx" if export_year_val else "attendance_all.xlsx"
-                            st.download_button("⬇️ تحميل", data=buf, file_name=filename)
+                            st.download_button("⬇️ تحميل", data=buf, file_name=filename, key="att_download")
             
             with op4:
                 with st.expander("🗑️ حذف"):
                     if records:
                         record_options = {f"{r.get('employee_name', '')} - {r.get('year', '')}/{r.get('month', '')}": r.get("id") for r in records}
-                        selected = st.selectbox("اختر السجل", list(record_options.keys()))
-                        if st.button("🗑️ حذف"):
+                        selected = st.selectbox("اختر السجل", list(record_options.keys()), key="att_del_sel")
+                        if st.button("🗑️ حذف", key="att_del_btn"):
                             delete_attendance_record(record_options[selected])
                             st.success("✅ تم الحذف")
                             st.rerun()
@@ -626,12 +627,150 @@ def render_settings(df_emp, df_kpi, df_data):
             
             with st.expander("⚠️ تنظيف كامل"):
                 st.warning("⚠️ تحذير: هذا الإجراء يمسح **جميع** السجلات نهائياً")
-                if st.button("🗑️ حذف الكل", type="secondary"):
+                if st.button("🗑️ حذف الكل", type="secondary", key="att_clear_all_btn"):
                     clear_all_attendance()
                     st.success("✅ تم الحذف")
                     st.rerun()
     else:
         st.info("⚠️ ملف attendance_manager.py غير موجود")
+
+    # ══════════════════════════════════════════════════════════════════
+    # ⚠️ تبويب الإجراءات التأديبية
+    # ══════════════════════════════════════════════════════════════════
+    if _DISCIPLINARY_OK and set_tab_disc:
+        with set_tab_disc:
+            st.markdown("#### ⚠️ إدارة الإجراءات التأديبية")
+            
+            stats = get_statistics()
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("📋 إجمالي الإجراءات", stats["total"])
+            with col2:
+                st.metric("👥 موظف لديه إجراءات", stats["unique_employees"])
+            with col3:
+                st.metric("📅 هذا الشهر", stats["current_month"])
+            
+            st.markdown("---")
+            
+            all_actions = load_actions()
+            if all_actions:
+                df_actions = pd.DataFrame(all_actions)
+                display_cols = ["employee_name", "action_date", "warning_type", "reason", "deduction_days"]
+                available_cols = [c for c in display_cols if c in df_actions.columns]
+                
+                display_df = df_actions[available_cols].copy()
+                display_df = display_df.rename(columns={
+                    "employee_name": "الموظف",
+                    "action_date": "التاريخ",
+                    "warning_type": "نوع الإنذار",
+                    "reason": "السبب",
+                    "deduction_days": "خصم (أيام)"
+                })
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("لا توجد إجراءات تأديبية مسجلة")
+            
+            st.markdown("---")
+            
+            op1, op2, op3, op4 = st.columns(4)
+            
+            with op1:
+                with st.expander("➕ إضافة إجراء جديد"):
+                    if df_emp is not None and not df_emp.empty:
+                        emp_names = sorted(df_emp["EmployeeName"].dropna().astype(str).str.strip().tolist())
+                    else:
+                        emp_names = []
+                    
+                    new_emp = st.selectbox("الموظف", emp_names if emp_names else ["لا يوجد موظفين"], key="disc_emp")
+                    new_date = st.date_input("التاريخ", value=date.today(), key="disc_date")
+                    new_type = st.selectbox("نوع الإنذار", ["تنبه خطي", "إنذار أول", "إنذار ثاني", "إنذار نهائي", "فصل"], key="disc_type")
+                    new_reason = st.text_area("السبب", key="disc_reason")
+                    new_deduction = st.number_input("عدد أيام الخصم", min_value=0, value=0, key="disc_deduction")
+                    
+                    if st.button("💾 إضافة الإجراء", key="add_disc_btn"):
+                        if new_emp and new_emp != "لا يوجد موظفين":
+                            add_action(
+                                emp_name=new_emp,
+                                emp_id="",
+                                action_date=new_date.strftime("%Y-%m-%d"),
+                                warning_type=new_type,
+                                reason=new_reason,
+                                deduction_days=new_deduction
+                            )
+                            st.success("✅ تم إضافة الإجراء")
+                            st.rerun()
+                        else:
+                            st.error("⚠️ اختر موظفاً أولاً")
+            
+            with op2:
+                with st.expander("📥 استيراد من Excel"):
+                    uploaded = st.file_uploader("اختر ملف Excel", type=["xlsx", "xls"], key="disc_upload")
+                    if uploaded:
+                        clear_old = st.checkbox("🗑️ مسح الإجراءات القديمة قبل الاستيراد", value=False, key="disc_clear")
+                        if st.button("بدء الاستيراد", key="disc_import_btn"):
+                            success, msg = import_from_excel(uploaded, clear_old=clear_old)
+                            if success:
+                                st.success(msg)
+                                st.rerun()
+                            else:
+                                st.error(msg)
+            
+            with op3:
+                with st.expander("📤 تصدير إلى Excel"):
+                    years = get_unique_years()
+                    if years:
+                        export_year = st.selectbox("السنة", ["-- الكل --"] + years, key="disc_export_year")
+                        if export_year != "-- الكل --":
+                            months = get_months_with_actions(export_year)
+                            export_month = st.selectbox("الشهر", ["-- الكل --"] + months, key="disc_export_month")
+                        else:
+                            export_month = "-- الكل --"
+                            export_year = None
+                    else:
+                        export_year = None
+                        export_month = "-- الكل --"
+                    
+                    if st.button("إنشاء ملف Excel", key="disc_export_btn"):
+                        if export_year and export_month != "-- الكل --":
+                            buf = export_to_excel(year=export_year, month=export_month)
+                            filename = f"disciplinary_{export_year}_{export_month}.xlsx"
+                        elif export_year:
+                            buf = export_to_excel(year=export_year)
+                            filename = f"disciplinary_{export_year}.xlsx"
+                        else:
+                            buf = export_to_excel()
+                            filename = f"disciplinary_all.xlsx"
+                        
+                        st.download_button(
+                            "⬇️ تحميل",
+                            data=buf,
+                            file_name=filename,
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key="disc_download"
+                        )
+            
+            with op4:
+                with st.expander("🗑️ حذف إجراء"):
+                    if all_actions:
+                        action_options = {f"{a.get('employee_name', '')} - {a.get('action_date', '')} - {a.get('warning_type', '')}": a.get("id") 
+                                         for a in all_actions}
+                        selected = st.selectbox("اختر الإجراء", list(action_options.keys()), key="disc_del_sel")
+                        if st.button("🗑️ حذف", type="primary", key="disc_del_btn"):
+                            action_id = action_options[selected]
+                            delete_action(action_id)
+                            st.success("✅ تم حذف الإجراء")
+                            st.rerun()
+                    else:
+                        st.info("لا توجد إجراءات للحذف")
+            
+            st.markdown("---")
+            
+            with st.expander("⚠️ تنظيف كامل (استخدام بحذر)"):
+                st.warning("⚠️ تحذير: هذا الإجراء يمسح **جميع** الإجراءات التأديبية نهائياً")
+                if st.button("🗑️ حذف جميع الإجراءات", type="secondary", key="disc_clear_all_btn"):
+                    clear_all_actions()
+                    st.success("✅ تم حذف جميع الإجراءات")
+                    st.rerun()
 
     # ══════════════════════════════════════════════════════════════════
     # قاعدة البيانات
