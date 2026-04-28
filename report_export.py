@@ -8,8 +8,7 @@ from constants import *
 from calculations import verbal_grade, kpi_score_to_pct, rating_label
 from excel_reports import print_preview_html
 
-# ========== دالة بناء شيت الموظف (مع دعم الإجراءات) ==========
-def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, monthly_scores, notes="", training="", chart_img=None, disciplinary_actions=None, employee_id=""):
+def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, monthly_scores, notes="", training="", chart_img=None, disciplinary_actions=None, employee_id="", attendance_data=None):
     safe = emp_name[:28]
     if safe in [s.title for s in wb.worksheets]:
         safe = safe[:25]+"_2"
@@ -20,7 +19,7 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
     # ألوان
     DARK, MID, ORANGE = "1F3864","2E75B6","ED7D31"
     LGRAY, WHITE, YELLOW, GREEN_BG, RED_BG = "F2F2F2","FFFFFF","FFF2CC","E2EFDA","FFDAD9"
-    WARM, NOTE_BG, TRAIN_BG, DATE_BG, INFO_BG, DISC_BG = "FFF3E0","FFFDE7","F3E5F5","E3F2FD","EBF3FB","FEE2E2"
+    WARM, NOTE_BG, TRAIN_BG, DATE_BG, INFO_BG, DISC_BG, ATT_BG = "FFF3E0","FFFDE7","F3E5F5","E3F2FD","EBF3FB","FEE2E2","E0F2FE"
 
     _med, _thn = Side(style="medium"), Side(style="thin")
     BK, TN = Border(left=_med,right=_med,top=_med,bottom=_med), Border(left=_thn,right=_thn,top=_thn,bottom=_thn)
@@ -50,24 +49,8 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
     sc_c = "375623" if pct>=80 else ("C00000" if pct<60 else "7F6000")
     sbg = GREEN_BG if pct>=80 else (YELLOW if pct>=60 else RED_BG)
 
-    # ========== التعديل: تصفية آمنة لقوائم KPI ==========
-    # نتجاهل أي عنصر ناقص أو فيه KPI_Name فارغ أو None
-    def _safe_kpi(k):
-        """تحقق من أن العنصر يحتوي على البيانات الأساسية المطلوبة"""
-        name = k.get("KPI_Name") if isinstance(k, dict) else None
-        return name and str(name).strip() not in ("", "nan", "None")
-
-    job_kpis = [
-        (k["KPI_Name"], k.get("Weight", 0), k.get("avg_score", 0))
-        for k in kpis
-        if _safe_kpi(k) and str(k["KPI_Name"]).strip() not in PERSONAL_KPIS
-    ]
-    per_kpis = [
-        (k["KPI_Name"], k.get("Weight", 0), k.get("avg_score", 0))
-        for k in kpis
-        if _safe_kpi(k) and str(k["KPI_Name"]).strip() in PERSONAL_KPIS
-    ]
-    # ========================================================
+    job_kpis = [(k["KPI_Name"],k["Weight"],k.get("avg_score",0)) for k in kpis if k["KPI_Name"] not in PERSONAL_KPIS]
+    per_kpis = [(k["KPI_Name"],k["Weight"],k.get("avg_score",0)) for k in kpis if k["KPI_Name"] in PERSONAL_KPIS]
 
     _MAR = {"Jan":"يناير","Feb":"فبراير","Mar":"مارس","Apr":"أبريل","May":"مايو","Jun":"يونيو","Jul":"يوليو","Aug":"أغسطس","Sep":"سبتمبر","Oct":"أكتوبر","Nov":"نوفمبر","Dec":"ديسمبر"}
     _company,_branch="",""
@@ -197,7 +180,7 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
     r+=1
     ws.row_dimensions[r].height = 3; r+=1
 
-    # ========== الإجراءات التأديبية ==========
+    # الإجراءات التأديبية
     if disciplinary_actions is not None and not disciplinary_actions.empty:
         ws.row_dimensions[r].height = 18
         mc(r,1,r,4,"⚠️ الإجراءات التأديبية المسجلة", bold=True, color="FFFFFF", bg="B91C1C", ah="center")
@@ -214,6 +197,22 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
             sc(ws.cell(r,3,str(row_disc.get("reason",""))), bg=rbg, wrap=True)
             sc(ws.cell(r,4,str(row_disc.get("deduction_days",0))), bg=rbg, ah="center")
             r+=1
+        ws.row_dimensions[r].height = 3; r+=1
+
+    # الالتزام بالدوام
+    if attendance_data is not None and not attendance_data.empty:
+        ws.row_dimensions[r].height = 18
+        mc(r,1,r,4,"⏰ الالتزام بالدوام", bold=True, color="FFFFFF", bg="1F3864", ah="center")
+        r+=1
+        ws.row_dimensions[r].height = 14
+        sc(ws.cell(r,1,"عدد مرات التأخير"), bold=True, sz=8, color="FFFFFF", bg=MID, ah="center")
+        sc(ws.cell(r,2,"إجمالي ساعات التأخير"), bold=True, sz=8, color="FFFFFF", bg=MID, ah="center")
+        r+=1
+        row_att = attendance_data.iloc[0]
+        ws.row_dimensions[r].height = 14
+        sc(ws.cell(r,1,str(row_att.get("late_count", 0))), bg=ATT_BG, ah="center")
+        sc(ws.cell(r,2,f"{float(row_att.get('total_late_hours', 0)):.2f}"), bg=ATT_BG, ah="center")
+        r+=1
         ws.row_dimensions[r].height = 3; r+=1
 
     # التوقيع
@@ -244,7 +243,7 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
     ws.print_options.verticalCentered = True
     return ws
 
-# ========== دالة بناء شيت الملخص (للتقارير الجماعية) ==========
+
 def build_summary_sheet(wb, rows, title="ملخص التقييم", year=None, chart_img=None):
     ws = wb.create_sheet(title[:28])
     ws.sheet_view.rightToLeft = True
@@ -262,7 +261,6 @@ def build_summary_sheet(wb, rows, title="ملخص التقييم", year=None, ch
 
     ws.row_dimensions[1].height = 36
 
-    # تعريف الدالتين المساعدتين داخل الدالة
     def _sc(cell, val=None, bold=False, sz=9, color="000000", bg=None, ah="right", av="center", brd="inner"):
         if val is not None: cell.value = val
         cell.font = Font(name="Arial", bold=bold, size=sz, color=color)
