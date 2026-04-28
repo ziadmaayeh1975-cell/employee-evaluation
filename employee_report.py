@@ -14,14 +14,12 @@ from data_loader import get_emp_notes
 from auth import get_current_reviewer, get_current_role
 from report_export import build_employee_sheet, print_preview_html
 
-# استيراد الإجراءات التأديبية
 try:
     from disciplinary_manager import get_actions_by_employee
     DISCIPLINARY_AVAILABLE = True
 except ImportError:
     DISCIPLINARY_AVAILABLE = False
 
-# استيراد نظام الالتزام بالدوام
 try:
     from attendance_manager import get_employee_attendance_summary
     ATTENDANCE_AVAILABLE = True
@@ -192,17 +190,15 @@ def render_employee_report(df_emp, df_kpi, df_data):
         _fb = get_emp_notes(sel2)
         notes2, training2 = _fb[0] if len(_fb)>0 else "", _fb[1] if len(_fb)>1 else ""
 
-    # جلب الإجراءات التأديبية
     disciplinary_df = None
     if DISCIPLINARY_AVAILABLE:
         try:
             disc_actions_list = get_actions_by_employee(sel2, sel2_year)
             if disc_actions_list:
                 disciplinary_df = pd.DataFrame(disc_actions_list)
-        except Exception as e:
-            st.warning(f"⚠️ خطأ في الإجراءات التأديبية: {e}")
+        except:
+            pass
 
-    # جلب بيانات الالتزام بالدوام
     attendance_count = 0
     attendance_hours = 0.0
     if ATTENDANCE_AVAILABLE:
@@ -211,8 +207,8 @@ def render_employee_report(df_emp, df_kpi, df_data):
                 att_summary = get_employee_attendance_summary(sel2, emp_id, sel2_year, month_num)
                 attendance_count += att_summary["count"]
                 attendance_hours += att_summary["hours"]
-        except Exception as e:
-            st.warning(f"⚠️ خطأ في تحميل الالتزام بالدوام: {e}")
+        except:
+            pass
 
     # عرض معلومات الموظف
     st.markdown(f"""
@@ -224,22 +220,26 @@ def render_employee_report(df_emp, df_kpi, df_data):
     </div>
     """, unsafe_allow_html=True)
 
-    # النتيجة النهائية وبطاقات المتوسطات
-    col_res, col_res2 = st.columns(2)
-    with col_res:
+    # النتيجة النهائية
+    st.markdown(f"""
+    <div style="background:white;border:2px solid #1E3A8A;border-radius:12px;padding:18px;text-align:center;margin-bottom:12px;">
+        <div style="font-size:13px;color:#64748B;">✅ النتيجة النهائية السنوية</div>
+        <div style="font-size:3rem;font-weight:bold;color:{clr2};">{int(round(pct2))}%</div>
+        <div style="font-size:1.1rem;color:{clr2};">{verb2}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
+    with col1:
         st.markdown(f"""
-        <div style="background:white;border:2px solid #1E3A8A;border-radius:12px;padding:18px;text-align:center;margin-bottom:12px;">
-            <div style="font-size:13px;color:#64748B;">✅ النتيجة النهائية السنوية</div>
-            <div style="font-size:3rem;font-weight:bold;color:{clr2};">{int(round(pct2))}%</div>
-            <div style="font-size:1.1rem;color:{clr2};">{verb2}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col_res2:
-        st.markdown(f"""
-        <div style="background:white;border:1px solid #ED7D31;border-radius:12px;padding:14px;text-align:center;">
+        <div style="background:white;border:1px solid #1E3A8A;border-radius:12px;padding:14px;text-align:center;">
             <div style="font-size:12px;color:#64748B;">🎯 متوسط الأداء الوظيفي</div>
             <div style="font-size:2rem;font-weight:bold;color:#1E3A8A;">{job_avg2}%</div>
-            <hr style="margin:8px 0;">
+        </div>
+        """, unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"""
+        <div style="background:white;border:1px solid #ED7D31;border-radius:12px;padding:14px;text-align:center;">
             <div style="font-size:12px;color:#64748B;">🌟 متوسط الصفات الشخصية</div>
             <div style="font-size:2rem;font-weight:bold;color:#ED7D31;">{pers_avg2}%</div>
         </div>
@@ -248,7 +248,9 @@ def render_employee_report(df_emp, df_kpi, df_data):
     st.markdown("---")
 
     if done2:
-        # ========== جدول نتيجة التقييم الشهري (على اليسار) ==========
+        # ============================================================
+        # جدول نتيجة التقييم الشهري (المطلوب)
+        # ============================================================
         st.markdown("### 📅 نتيجة التقييم الشهري")
         
         monthly_table_data = []
@@ -286,7 +288,7 @@ def render_employee_report(df_emp, df_kpi, df_data):
         
         st.markdown("---")
         
-        # ========== مؤشرات الأداء الوظيفي والصفات الشخصية (عمودين) ==========
+        # مؤشرات الأداء الوظيفي والصفات الشخصية
         col_kpi, col_pers = st.columns(2)
         
         with col_kpi:
@@ -315,7 +317,7 @@ def render_employee_report(df_emp, df_kpi, df_data):
             else:
                 st.info("لا توجد مؤشرات صفات شخصية")
 
-        # ========== الإجراءات التأديبية ==========
+        # الإجراءات التأديبية
         if disciplinary_df is not None and not disciplinary_df.empty:
             st.subheader("⚠️ الإجراءات التأديبية المسجلة")
             disc_display = disciplinary_df.copy()
@@ -330,7 +332,7 @@ def render_employee_report(df_emp, df_kpi, df_data):
             if available_cols:
                 st.dataframe(disc_display[available_cols], use_container_width=True, hide_index=True)
 
-        # ========== الالتزام بالدوام ==========
+        # الالتزام بالدوام
         if attendance_count > 0 or attendance_hours > 0:
             st.subheader("⏰ الالتزام بالدوام")
             att_col1, att_col2 = st.columns(2)
@@ -339,14 +341,14 @@ def render_employee_report(df_emp, df_kpi, df_data):
             with att_col2:
                 st.metric("⏱️ إجمالي ساعات التأخير", f"{attendance_hours:.2f}")
 
-        # ========== ملاحظات وتدريب ==========
+        # ملاحظات وتدريب
         cn, ct = st.columns(2)
         with cn:
             st.info(f"📝 **ملاحظات المقيم:** {notes2 or '—'}")
         with ct:
             st.info(f"🎓 **الاحتياجات التدريبية:** {training2 or '—'}")
 
-        # ========== الرسم البياني ==========
+        # الرسم البياني
         months_done_list = [(MONTHS_AR[n-1], round(s*100, 1)) for n, _, s, *_ in monthly_rep if s > 0]
         if months_done_list and PLOTLY_OK:
             st.markdown("---")
@@ -359,13 +361,12 @@ def render_employee_report(df_emp, df_kpi, df_data):
     else:
         st.info("لا توجد تقييمات")
 
-    # ========== تحميل التقرير ==========
+    # تحميل التقرير
     st.subheader("⬇️ تحميل التقرير")
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
     kpis_export = [{"KPI_Name": k, "Weight": w, "avg_score": g} for k, w, g in job_kpis2 + pers_kpis2]
     
-    # تحضير بيانات الالتزام بالدوام للتصدير
     attendance_export = None
     if attendance_count > 0 or attendance_hours > 0:
         attendance_export = pd.DataFrame([{
