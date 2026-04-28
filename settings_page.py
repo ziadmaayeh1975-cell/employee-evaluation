@@ -656,14 +656,4 @@ def render_settings(df_emp, df_kpi, df_data):
                         record_options = {f"{r.get('employee_name', '')} - {r.get('date', '')} - {r.get('late_hours', 0)} ساعة": r.get("id") 
                                          for r in all_records}
                         selected = st.selectbox("اختر السجل", list(record_options.keys()), key="att_del_sel")
-                        if st.button("🗑️ حذف", type="primary", key="att_del_btn"):
-                            record_id = record_options[selected]
-                            delete_attendance_record(record_id)
-                            st.success("✅ تم حذف السجل")
-                            st.rerun()
-                    else:
-                        st.info("لا توجد سجلات للحذف")
-            
-            st.markdown("---")
-            
-            with st.expander("⚠️ تنظ
+                        if
