@@ -14,6 +14,21 @@ from data_loader import get_emp_notes
 from auth import get_current_reviewer, get_current_role
 from report_export import build_employee_sheet, print_preview_html
 
+# استيراد الإجراءات التأديبية
+try:
+    from disciplinary_manager import get_actions_by_employee
+    DISCIPLINARY_AVAILABLE = True
+except ImportError:
+    DISCIPLINARY_AVAILABLE = False
+
+# استيراد نظام الالتزام بالدوام
+try:
+    from attendance_manager import get_employee_attendance_summary
+    ATTENDANCE_AVAILABLE = True
+except ImportError:
+    ATTENDANCE_AVAILABLE = False
+
+
 def _reviewer_emp_set(df_emp):
     role = get_current_role()
     current_reviewer = get_current_reviewer()
@@ -24,11 +39,13 @@ def _reviewer_emp_set(df_emp):
     reviewer_col = "اسم المقيم"
     return set(df_emp[df_emp[reviewer_col].astype(str).str.strip() == current_reviewer]["EmployeeName"].dropna().tolist())
 
+
 def _reviewer_emp_list(df_emp):
     allowed = _reviewer_emp_set(df_emp)
     if allowed is None:
         return df_emp["EmployeeName"].dropna().astype(str).str.strip().tolist()
     return list(allowed)
+
 
 def _safe_df(df):
     if df is None or not isinstance(df, pd.DataFrame):
@@ -38,6 +55,7 @@ def _safe_df(df):
         if col not in df.columns:
             df[col] = pd.Series(dtype="object")
     return df
+
 
 def _get_month_meta(df_data, emp, month_en, year):
     mask = (df_data["EmployeeName"] == emp) & (df_data["Month"] == month_en) & (df_data["Year"] == int(year))
@@ -49,6 +67,7 @@ def _get_month_meta(df_data, emp, month_en, year):
     eval_d = row.get("EvalDate", "") if "EvalDate" in sub.columns else ""
     training = row.get("Training", "") if "Training" in sub.columns else ""
     return str(eval_d), str(notes), str(training)
+
 
 def render_employee_report(df_emp, df_kpi, df_data):
     st.subheader("📄 نموذج التقييم النهائي للموظف")
@@ -173,14 +192,31 @@ def render_employee_report(df_emp, df_kpi, df_data):
         _fb = get_emp_notes(sel2)
         notes2, training2 = _fb[0] if len(_fb)>0 else "", _fb[1] if len(_fb)>1 else ""
 
+    # جلب الإجراءات التأديبية
     disciplinary_df = None
-    try:
-        from disciplinary_manager import get_actions_by_employee
-        disc_actions_list = get_actions_by_employee(sel2, sel2_year)
-        if disc_actions_list:
-            disciplinary_df = pd.DataFrame(disc_actions_list)
-    except Exception as e:
-        st.warning(f"⚠️ خطأ في الإجراءات التأديبية: {e}")
+    if DISCIPLINARY_AVAILABLE:
+        try:
+            disc_actions_list = get_actions_by_employee(sel2, sel2_year)
+            if disc_actions_list:
+                disciplinary_df = pd.DataFrame(disc_actions_list)
+        except Exception as e:
+            st.warning(f"⚠️ خطأ في الإجراءات التأديبية: {e}")
+
+    # جلب بيانات الالتزام بالدوام
+    attendance_data = None
+    attendance_count = 0
+    attendance_hours = 0.0
+    if ATTENDANCE_AVAILABLE:
+        try:
+            # جلب ملخص الالتزام بالدوام للسنة كاملة
+            for month_num in range(1, 13):
+                att_summary = get_employee_attendance_summary(sel2, emp_id, sel2_year, month_num)
+                attendance_count += att_summary["count"]
+                attendance_hours += att_summary["hours"]
+            if attendance_count > 0 or attendance_hours > 0:
+                attendance_data = {"count": attendance_count, "hours": attendance_hours}
+        except Exception as e:
+            st.warning(f"⚠️ خطأ في تحميل الالتزام بالدوام: {e}")
 
     st.markdown(f"""
     <div style="background:#F8FAFC;border:1px solid #CBD5E1;border-radius:12px;padding:16px;margin-bottom:10px;direction:rtl;">
@@ -239,18 +275,7 @@ def render_employee_report(df_emp, df_kpi, df_data):
                     "ملاحظات المقيم": "—"
                 })
         
-        st.dataframe(
-            pd.DataFrame(monthly_table_data), 
-            use_container_width=True, 
-            hide_index=True,
-            column_config={
-                "الشهر": st.column_config.TextColumn("الشهر", width="small"),
-                "الدرجة (%)": st.column_config.TextColumn("الدرجة", width="small"),
-                "التقييم اللفظي": st.column_config.TextColumn("التقييم", width="medium"),
-                "تاريخ التقييم": st.column_config.TextColumn("تاريخ التقييم", width="medium"),
-                "ملاحظات المقيم": st.column_config.TextColumn("ملاحظات المقيم", width="large"),
-            }
-        )
+        st.dataframe(pd.DataFrame(monthly_table_data), use_container_width=True, hide_index=True)
         
         st.markdown("---")
         st.subheader("🎯 مؤشرات الأداء الوظيفي")
@@ -277,6 +302,7 @@ def render_employee_report(df_emp, df_kpi, df_data):
         else:
             st.info("لا توجد مؤشرات صفات شخصية")
 
+        # الإجراءات التأديبية
         if disciplinary_df is not None and not disciplinary_df.empty:
             st.subheader("⚠️ الإجراءات التأديبية المسجلة")
             disc_display = disciplinary_df.copy()
@@ -290,6 +316,15 @@ def render_employee_report(df_emp, df_kpi, df_data):
             available_cols = [c for c in cols_to_show if c in disc_display.columns]
             if available_cols:
                 st.dataframe(disc_display[available_cols], use_container_width=True, hide_index=True)
+
+        # الالتزام بالدوام
+        if attendance_data is not None:
+            st.subheader("⏰ الالتزام بالدوام")
+            att_col1, att_col2 = st.columns(2)
+            with att_col1:
+                st.metric("📋 إجمالي عدد مرات التأخير", attendance_data["count"])
+            with att_col2:
+                st.metric("⏱️ إجمالي ساعات التأخير", f"{attendance_data['hours']:.2f}")
 
         cn, ct = st.columns(2)
         with cn:
@@ -312,12 +347,25 @@ def render_employee_report(df_emp, df_kpi, df_data):
     st.subheader("⬇️ تحميل التقرير")
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
-    kpis_export = [{"KPI_Name":k,"Weight":w,"avg_score":g} for k,w,g in job_kpis2+pers_kpis2]
+    kpis_export = [{"KPI_Name": k, "Weight": w, "avg_score": g} for k, w, g in job_kpis2 + pers_kpis2]
+    
+    # تحضير بيانات الالتزام بالدوام للتصدير
+    attendance_export = None
+    if attendance_data is not None:
+        attendance_export = pd.DataFrame([{
+            "employee_name": sel2,
+            "employee_id": emp_id,
+            "year": sel2_year,
+            "late_count": attendance_data["count"],
+            "total_late_hours": attendance_data["hours"]
+        }])
+    
     build_employee_sheet(
         wb, sel2, job2, dept2, mgr2, sel2_year,
         kpis_export, monthly_rep, notes2, training2,
         employee_id=emp_id,
-        disciplinary_actions=disciplinary_df
+        disciplinary_actions=disciplinary_df,
+        attendance_data=attendance_export
     )
     buf = io.BytesIO()
     wb.save(buf)
