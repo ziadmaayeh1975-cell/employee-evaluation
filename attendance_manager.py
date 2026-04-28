@@ -94,7 +94,7 @@ def add_attendance_record(emp_name, emp_id, date_str, late_hours, days_count, am
     - emp_name: اسم الموظف
     - emp_id: الرقم الوظيفي
     - date_str: تاريخ التأخير (YYYY-MM-DD)
-    - late_hours: عدد ساعات التأخير
+    - late_hours: عدد ساعات التأخير (رقم عشري)
     - days_count: عدد الأيام (عادة 1)
     - amount: القيمة (اختياري)
     """
@@ -149,16 +149,40 @@ def clear_all_attendance():
     return True
 
 # ═══════════════════════════════════════════════════════════════════
-# استيراد من Excel
+# دالة مساعدة لتحويل صيغة الوقت (HH:MM) إلى عدد ساعات (Float)
+# ═══════════════════════════════════════════════════════════════════
+def _time_str_to_hours(time_str):
+    """تحويل صيغة الوقت 'HH:MM' أو 'HH:MM:SS' إلى عدد ساعات (float)"""
+    if time_str is None or time_str == "" or pd.isna(time_str):
+        return 0.0
+    time_str = str(time_str).strip()
+    # إذا كان رقماً بالفعل
+    try:
+        return float(time_str)
+    except:
+        pass
+    # إذا كان بصيغة وقت
+    parts = time_str.split(":")
+    if len(parts) >= 2:
+        try:
+            hours = int(parts[0])
+            minutes = int(parts[1])
+            return hours + minutes / 60.0
+        except:
+            pass
+    return 0.0
+
+# ═══════════════════════════════════════════════════════════════════
+# استيراد من Excel (مع دعم صيغة الوقت)
 # ═══════════════════════════════════════════════════════════════════
 def import_from_excel(uploaded_file, clear_old=False):
     """
     استيراد بيانات الالتزام بالدوام من ملف Excel
     الأعمدة المتوقعة:
-    - الرقم الوظيفي / رقم الموظف / employee_id
+    - رقم الموظف / employee_id
     - اسم الموظف / employee_name
     - التاريخ / date
-    - ساعات التاخير / late_hours
+    - ساعات التاخير / late_hours (يمكن أن تكون رقم أو صيغة وقت HH:MM)
     - عدد الايام / days_count
     - القيمة / amount (اختياري)
     """
@@ -176,11 +200,11 @@ def import_from_excel(uploaded_file, clear_old=False):
                 column_mapping[col] = "employee_name"
             elif "تاريخ" in col_lower or "date" in col_lower:
                 column_mapping[col] = "date"
-            elif "ساعات التاخير" in col_lower or "late_hours" in col_lower:
+            elif "ساعات التاخير" in col_lower or "ساعات التأخير" in col_lower or "late_hours" in col_lower:
                 column_mapping[col] = "late_hours"
             elif "عدد الايام" in col_lower or "days_count" in col_lower:
                 column_mapping[col] = "days_count"
-            elif "قيمة" in col_lower or "amount" in col_lower:
+            elif "قيمة" in col_lower or "amount" in col_lower or "القيمة المخصومة" in col_lower:
                 column_mapping[col] = "amount"
         
         df = df.rename(columns=column_mapping)
@@ -194,14 +218,20 @@ def import_from_excel(uploaded_file, clear_old=False):
         # تنظيف البيانات
         df["employee_name"] = df["employee_name"].astype(str).str.strip()
         df["employee_id"] = df["employee_id"].astype(str).str.strip()
-        df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
-        df["late_hours"] = pd.to_numeric(df["late_hours"], errors="coerce").fillna(0).astype(float)
+        df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+        
+        # تحويل late_hours من صيغة الوقت إلى عدد ساعات
+        df["late_hours"] = df["late_hours"].apply(_time_str_to_hours)
+        
         df["days_count"] = pd.to_numeric(df["days_count"], errors="coerce").fillna(1).astype(int)
         
         if "amount" in df.columns:
             df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0).astype(float)
         else:
             df["amount"] = 0.0
+        
+        # إزالة الصفوف التي تحتوي على قيم فارغة في الأعمدة الأساسية
+        df = df.dropna(subset=["employee_name", "employee_id", "date"])
         
         # مسح القديم إذا طلب
         if clear_old:
