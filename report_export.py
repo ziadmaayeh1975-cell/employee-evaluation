@@ -50,8 +50,24 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
     sc_c = "375623" if pct>=80 else ("C00000" if pct<60 else "7F6000")
     sbg = GREEN_BG if pct>=80 else (YELLOW if pct>=60 else RED_BG)
 
-    job_kpis = [(k["KPI_Name"],k["Weight"],k.get("avg_score",0)) for k in kpis if k["KPI_Name"] not in PERSONAL_KPIS]
-    per_kpis = [(k["KPI_Name"],k["Weight"],k.get("avg_score",0)) for k in kpis if k["KPI_Name"] in PERSONAL_KPIS]
+    # ========== التعديل: تصفية آمنة لقوائم KPI ==========
+    # نتجاهل أي عنصر ناقص أو فيه KPI_Name فارغ أو None
+    def _safe_kpi(k):
+        """تحقق من أن العنصر يحتوي على البيانات الأساسية المطلوبة"""
+        name = k.get("KPI_Name") if isinstance(k, dict) else None
+        return name and str(name).strip() not in ("", "nan", "None")
+
+    job_kpis = [
+        (k["KPI_Name"], k.get("Weight", 0), k.get("avg_score", 0))
+        for k in kpis
+        if _safe_kpi(k) and str(k["KPI_Name"]).strip() not in PERSONAL_KPIS
+    ]
+    per_kpis = [
+        (k["KPI_Name"], k.get("Weight", 0), k.get("avg_score", 0))
+        for k in kpis
+        if _safe_kpi(k) and str(k["KPI_Name"]).strip() in PERSONAL_KPIS
+    ]
+    # ========================================================
 
     _MAR = {"Jan":"يناير","Feb":"فبراير","Mar":"مارس","Apr":"أبريل","May":"مايو","Jun":"يونيو","Jul":"يوليو","Aug":"أغسطس","Sep":"سبتمبر","Oct":"أكتوبر","Nov":"نوفمبر","Dec":"ديسمبر"}
     _company,_branch="",""
@@ -245,7 +261,7 @@ def build_summary_sheet(wb, rows, title="ملخص التقييم", year=None, ch
         ws.column_dimensions[col].width = w
 
     ws.row_dimensions[1].height = 36
-    
+
     # تعريف الدالتين المساعدتين داخل الدالة
     def _sc(cell, val=None, bold=False, sz=9, color="000000", bg=None, ah="right", av="center", brd="inner"):
         if val is not None: cell.value = val
@@ -254,11 +270,11 @@ def build_summary_sheet(wb, rows, title="ملخص التقييم", year=None, ch
         if bg: cell.fill = PatternFill("solid", fgColor=bg)
         if brd == "outer": cell.border = OUTER_B
         else: cell.border = INNER_B
-    
+
     def _mc(r1, c1, r2, c2, val=None, **kw):
         ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
         _sc(ws.cell(r1, c1, val), **kw)
-    
+
     _mc(1, 1, 1, 7, title, bold=True, sz=12, color="FFFFFF", bg=DARK, ah="center", av="center", brd="outer")
 
     import os as _os2
