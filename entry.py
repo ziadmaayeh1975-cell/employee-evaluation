@@ -5,17 +5,22 @@ from data_loader import save_evaluation
 from auth import get_current_reviewer, get_current_role
 from calculations import rating_label, rating_label_color, verbal_grade, grade_color_hex
 
-# ✅ استيراد نظام الإجراءات التأديبية الجديد (من قاعدة البيانات)
+# ✅ استيراد نظام الإجراءات التأديبية
 try:
     from disciplinary_manager import (
         load_actions as load_disciplinary_actions,
         get_actions_by_employee as get_employee_disciplinary,
-        get_actions_summary as format_disciplinary_text
     )
     DISCIPLINARY_AVAILABLE = True
 except ImportError:
     DISCIPLINARY_AVAILABLE = False
-    st.warning("⚠️ نظام الإجراءات التأديبية غير متاح")
+
+# ✅ استيراد نظام الالتزام بالدوام
+try:
+    from attendance_manager import get_employee_attendance_summary
+    ATTENDANCE_AVAILABLE = True
+except ImportError:
+    ATTENDANCE_AVAILABLE = False
 
 INPUT_CSS = """<style>
 div[data-testid="stNumberInput"] input {
@@ -91,7 +96,7 @@ def render_entry(df_emp, df_kpi, df_data):
     current_reviewer = get_current_reviewer()
     is_super_admin   = (role == "super_admin")
     is_admin         = (role in ("admin", "super_admin"))
-    reviewer_col     = "اسم المقيم"  # استخدام الاسم الصريح للعمود
+    reviewer_col     = "اسم المقيم"
 
     r1c1, r1c2, r1c3 = st.columns(3)
 
@@ -136,7 +141,6 @@ def render_entry(df_emp, df_kpi, df_data):
         st.info("⬆️ اختر المقيم أولاً.")
         return
 
-    # مؤشر اكتمال التقييمات
     if emp_list and sel_emp == "-- اختر --":
         st.markdown("---")
         st.markdown("#### 📊 حالة التقييمات لهذا العام")
@@ -169,14 +173,12 @@ def render_entry(df_emp, df_kpi, df_data):
         st.info("⬆️ اختر الموظف.")
         return
 
-    # البحث عن بيانات الموظف باستخدام الأسماء الصريحة للأعمدة
     emp_row = df_emp[df_emp["EmployeeName"] == sel_emp]
     if emp_row.empty:
         st.warning("⚠️ لم يُعثر على بيانات هذا الموظف.")
         return
     emp_row = emp_row.iloc[0]
     
-    # قراءة البيانات باستخدام أسماء الأعمدة (وليس المواقع)
     emp_id = str(emp_row.get("رقم الموظف", ""))
     job_title = str(emp_row.get("JobTitle", ""))
     dept_name = str(emp_row.get("القسم", ""))
@@ -192,7 +194,6 @@ def render_entry(df_emp, df_kpi, df_data):
             st.error(f"⚠️ يوجد تقييم محفوظ لـ ({sel_emp}) في {sel_month} {sel_year}.")
             return
 
-    # رأس بيانات الموظف + زر إلغاء
     hc1, hc2 = st.columns([5, 1])
     with hc1:
         st.markdown(f"""
@@ -211,25 +212,18 @@ def render_entry(df_emp, df_kpi, df_data):
             st.rerun()
 
     # ═══════════════════════════════════════════════════════════════════
-    # 📋 الإجراءات التأديبية (باستخدام النظام الجديد)
+    # 📋 الإجراءات التأديبية
     # ═══════════════════════════════════════════════════════════════════
     if DISCIPLINARY_AVAILABLE:
         try:
-            # تحميل جميع الإجراءات من قاعدة البيانات
             all_actions = load_disciplinary_actions()
             if all_actions:
-                # تحويل اسم الشهر العربي إلى رقم الشهر للمقارنة
                 month_number = MONTHS_AR.index(sel_month) + 1
-                
-                # جلب الإجراءات التي تطابق الموظف والسنة والشهر المحدد
                 disc_actions = get_employee_disciplinary(sel_emp, sel_year, month_number)
-                
                 if disc_actions:
                     st.markdown("---")
                     st.markdown("#### ⚠️ الإجراءات التأديبية")
                     st.warning(f"⚠️ يوجد **{len(disc_actions)}** إجراء(ات) تأديبي(ة) مسجلة للموظف في هذا الشهر")
-                    
-                    # عرض جدول الإجراءات
                     display_data = []
                     for a in disc_actions:
                         display_data.append({
@@ -238,16 +232,33 @@ def render_entry(df_emp, df_kpi, df_data):
                             "السبب": a.get("reason", ""),
                             "خصم (أيام)": a.get("deduction_days", 0)
                         })
-                    
                     if display_data:
                         st.dataframe(pd.DataFrame(display_data), hide_index=True, use_container_width=True)
-                    
-                    # تخزين الإجراءات في session_state للتقرير
                     st.session_state[f"disciplinary_{sel_emp}_{sel_month}_{sel_year}"] = disc_actions
                 else:
                     st.info("✅ لا توجد إجراءات تأديبية للموظف في هذا الشهر")
         except Exception as e:
             st.error(f"⚠️ خطأ في تحميل الإجراءات التأديبية: {e}")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # ⏰ الالتزام بالدوام (التأخير)
+    # ═══════════════════════════════════════════════════════════════════
+    if ATTENDANCE_AVAILABLE:
+        try:
+            month_number = MONTHS_AR.index(sel_month) + 1
+            att_summary = get_employee_attendance_summary(sel_emp, emp_id, sel_year, month_number)
+            if att_summary["count"] > 0 or att_summary["hours"] > 0:
+                st.markdown("---")
+                st.markdown("#### ⏰ الالتزام بالدوام")
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.metric("📋 عدد مرات التأخير", att_summary["count"])
+                with col_b:
+                    st.metric("⏱️ إجمالي ساعات التأخير", f"{att_summary['hours']:.2f}")
+            else:
+                st.info("✅ لا توجد سجلات تأخير للموظف في هذا الشهر")
+        except Exception as e:
+            st.error(f"⚠️ خطأ في تحميل بيانات الالتزام بالدوام: {e}")
 
     kpi_rows_raw = df_kpi[df_kpi["JobTitle"].astype(str).str.strip() == job_title]
     if kpi_rows_raw.empty:
@@ -257,7 +268,6 @@ def render_entry(df_emp, df_kpi, df_data):
     job_kpis = kpi_rows_raw[~kpi_rows_raw["KPI_Name"].isin(PERSONAL_KPIS)]
     pers_kpis = kpi_rows_raw[kpi_rows_raw["KPI_Name"].isin(PERSONAL_KPIS)]
 
-    # تحميل المسودة إن وجدت
     draft = _load_draft(sel_emp, sel_month, sel_year)
     if draft:
         st.info(f"📝 يوجد مسودة محفوظة بتاريخ {draft['timestamp']} — يمكنك متابعة الإدخال أو البدء من جديد.")
@@ -268,9 +278,6 @@ def render_entry(df_emp, df_kpi, df_data):
     COLORS = ["#DBEAFE","#E0F2FE","#EDE9FE","#FCE7F3","#D1FAE5",
               "#FEF3C7","#FEE2E2","#F0FDF4","#EFF6FF","#FDF4FF"]
 
-    # ═══════════════════════════════════════════════════════════════════
-    # مؤشرات الأداء الوظيفي (المقيم يرى فقط 0-100)
-    # ═══════════════════════════════════════════════════════════════════
     st.markdown("---")
     st.markdown("### 🎯 مؤشرات الأداء الوظيفي")
     st.caption("📌 أدخل النسبة المئوية لكل مؤشر (من 0 إلى 100)")
@@ -283,7 +290,6 @@ def render_entry(df_emp, df_kpi, df_data):
         kname = str(row["KPI_Name"]).strip()
         weight = float(row["Weight"])
         bg = COLORS[i % len(COLORS)]
-        
         draft_val = draft["job_pct_values"].get(kname, 0.0) if draft else 0.0
 
         col_name, col_inp, col_info = st.columns([4, 1.5, 1.5])
@@ -297,24 +303,12 @@ def render_entry(df_emp, df_kpi, df_data):
                     (الوزن في النظام: {weight}%)
                 </span>
             </div>""", unsafe_allow_html=True)
-        
         with col_inp:
-            user_pct = st.number_input(
-                "", 
-                min_value=0.0, 
-                max_value=100.0, 
-                value=float(draft_val), 
-                step=1.0, 
-                key=f"kpi_{kname}",
-                label_visibility="collapsed",
-                format="%.0f"
-            )
+            user_pct = st.number_input("", min_value=0.0, max_value=100.0, value=float(draft_val), step=1.0, key=f"kpi_{kname}", label_visibility="collapsed", format="%.0f")
             job_pct_values[kname] = user_pct
-            
             actual_score = _calculate_actual_score(user_pct, weight)
             job_actual_scores[kname] = actual_score
             job_total_weight += weight
-        
         with col_info:
             if user_pct >= 90:
                 lbl, clr = "ممتاز", "#15803d"
@@ -326,7 +320,6 @@ def render_entry(df_emp, df_kpi, df_data):
                 lbl, clr = "متوسط", "#b45309"
             else:
                 lbl, clr = "ضعيف", "#b91c1c"
-            
             st.markdown(f"""
             <div style="background:{clr}22;border:1px solid {clr};
                         border-radius:6px;padding:4px 8px;text-align:center;
@@ -336,9 +329,6 @@ def render_entry(df_emp, df_kpi, df_data):
 
     job_total = sum(job_actual_scores.values())
 
-    # ═══════════════════════════════════════════════════════════════════
-    # مؤشرات الصفات الشخصية (المقيم يرى فقط 0-100)
-    # ═══════════════════════════════════════════════════════════════════
     st.markdown("---")
     st.markdown("### 🌟 مؤشرات الصفات الشخصية")
     st.caption("📌 أدخل النسبة المئوية لكل صفة (من 0 إلى 100)")
@@ -347,14 +337,12 @@ def render_entry(df_emp, df_kpi, df_data):
     pers_actual_scores = {}
     pers_total_weight = 0.0
 
-    pers_source = pers_kpis if not pers_kpis.empty else \
-        pd.DataFrame([{"KPI_Name": k, "Weight": PERSONAL_WEIGHT} for k in PERSONAL_KPIS])
+    pers_source = pers_kpis if not pers_kpis.empty else pd.DataFrame([{"KPI_Name": k, "Weight": PERSONAL_WEIGHT} for k in PERSONAL_KPIS])
 
     for i, (_, row) in enumerate(pers_source.iterrows()):
         kname = str(row["KPI_Name"]).strip()
         weight = float(row["Weight"])
         bg = COLORS[(i+5) % len(COLORS)]
-        
         draft_val2 = draft["pers_pct_values"].get(kname, 0.0) if draft else 0.0
 
         col_name2, col_inp2, col_info2 = st.columns([4, 1.5, 1.5])
@@ -368,24 +356,12 @@ def render_entry(df_emp, df_kpi, df_data):
                     (الوزن في النظام: {weight}%)
                 </span>
             </div>""", unsafe_allow_html=True)
-        
         with col_inp2:
-            user_pct2 = st.number_input(
-                "", 
-                min_value=0.0, 
-                max_value=100.0, 
-                value=float(draft_val2), 
-                step=1.0, 
-                key=f"pers_{kname}",
-                label_visibility="collapsed",
-                format="%.0f"
-            )
+            user_pct2 = st.number_input("", min_value=0.0, max_value=100.0, value=float(draft_val2), step=1.0, key=f"pers_{kname}", label_visibility="collapsed", format="%.0f")
             pers_pct_values[kname] = user_pct2
-            
             actual_score2 = _calculate_actual_score(user_pct2, weight)
             pers_actual_scores[kname] = actual_score2
             pers_total_weight += weight
-        
         with col_info2:
             if user_pct2 >= 90:
                 lbl2, clr2 = "ممتاز", "#15803d"
@@ -397,7 +373,6 @@ def render_entry(df_emp, df_kpi, df_data):
                 lbl2, clr2 = "متوسط", "#b45309"
             else:
                 lbl2, clr2 = "ضعيف", "#b91c1c"
-            
             st.markdown(f"""
             <div style="background:{clr2}22;border:1px solid {clr2};
                         border-radius:6px;padding:4px 8px;text-align:center;
@@ -406,7 +381,6 @@ def render_entry(df_emp, df_kpi, df_data):
             </div>""", unsafe_allow_html=True)
 
     pers_total = sum(pers_actual_scores.values())
-    
     grand_total = job_total + pers_total
     verb = verbal_grade(grand_total)
     clr = grade_color_hex(grand_total)
@@ -468,17 +442,12 @@ def render_entry(df_emp, df_kpi, df_data):
                     weight = 0
                     lbl = "جيد"
                 kpi_rows.append((kname, weight, actual_score, lbl))
-            
             for kname, actual_score in pers_actual_scores.items():
                 weight = PERSONAL_WEIGHT
                 pct_for_label = (actual_score / weight) * 100 if weight > 0 else 0
                 lbl = rating_label(pct_for_label)
                 kpi_rows.append((kname, weight, actual_score, lbl))
-            
-            ok, err = save_evaluation(
-                sel_emp, sel_month, sel_year, rev_name, dept_name,
-                kpi_rows, notes, training
-            )
+            ok, err = save_evaluation(sel_emp, sel_month, sel_year, rev_name, dept_name, kpi_rows, notes, training)
             if ok:
                 _clear_draft(sel_emp, sel_month, sel_year)
                 st.success(f"✅ تم حفظ تقييم {sel_emp} لشهر {sel_month} {sel_year} بنجاح!")
@@ -488,15 +457,12 @@ def render_entry(df_emp, df_kpi, df_data):
                 st.error(f"❌ فشل الحفظ: {err}")
 
     with b2:
-        if st.button("📌 حفظ مسودة", use_container_width=True,
-                     help="احفظ التقدم الحالي للعودة إليه لاحقاً"):
-            _save_draft(sel_emp, sel_month, sel_year,
-                        job_pct_values, pers_pct_values, notes, training)
+        if st.button("📌 حفظ مسودة", use_container_width=True, help="احفظ التقدم الحالي للعودة إليه لاحقاً"):
+            _save_draft(sel_emp, sel_month, sel_year, job_pct_values, pers_pct_values, notes, training)
             st.success("✅ تم حفظ المسودة — يمكنك العودة إليها لاحقاً.")
 
     with b3:
-        if st.button("❌ إلغاء", use_container_width=True,
-                     help="إلغاء والعودة بدون حفظ"):
+        if st.button("❌ إلغاء", use_container_width=True, help="إلغاء والعودة بدون حفظ"):
             _clear_draft(sel_emp, sel_month, sel_year)
             st.session_state.pop("sel_emp", None)
             st.rerun()
