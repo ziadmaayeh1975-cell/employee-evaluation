@@ -32,12 +32,12 @@ except ImportError:
 # استيراد نظام الالتزام بالدوام
 try:
     from attendance_manager import (
-        load_attendance, add_attendance_record, delete_attendance_record, clear_all_attendance,
+        load_attendance, add_attendance_manual, delete_attendance_record, clear_all_attendance,
         import_from_excel as import_attendance_from_excel,
         export_to_excel as export_attendance_to_excel,
-        get_attendance_by_employee, get_attendance_summary,
         get_statistics as get_attendance_statistics,
-        get_unique_years as get_attendance_unique_years
+        get_unique_years as get_attendance_unique_years,
+        get_employee_attendance_summary
     )
     _ATTENDANCE_OK = True
 except ImportError:
@@ -545,28 +545,25 @@ def render_settings(df_emp, df_kpi, df_data):
             stats = get_attendance_statistics()
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("📋 إجمالي سجلات التأخير", stats["total"])
+                st.metric("📋 إجمالي السجلات", stats["total"])
             with col2:
                 st.metric("👥 موظف لديه تأخير", stats["unique_employees"])
             
             st.markdown("---")
             
-            all_records = load_attendance()
-            if all_records:
-                df_att = pd.DataFrame(all_records)
-                display_cols = ["employee_name", "employee_id", "date", "late_hours", "days_count", "amount"]
-                available_cols = [c for c in display_cols if c in df_att.columns]
-                
-                display_df = df_att[available_cols].copy()
-                display_df = display_df.rename(columns={
+            records = load_attendance()
+            if records:
+                df_att = pd.DataFrame(records)
+                display_cols = ["employee_name", "employee_id", "year", "month", "late_count", "total_late_hours"]
+                available = [c for c in display_cols if c in df_att.columns]
+                st.dataframe(df_att[available].rename(columns={
                     "employee_name": "الموظف",
                     "employee_id": "رقم الموظف",
-                    "date": "التاريخ",
-                    "late_hours": "ساعات التأخير",
-                    "days_count": "عدد الأيام",
-                    "amount": "القيمة"
-                })
-                st.dataframe(display_df, use_container_width=True, hide_index=True)
+                    "year": "السنة",
+                    "month": "الشهر",
+                    "late_count": "عدد مرات التأخير",
+                    "total_late_hours": "إجمالي ساعات التأخير"
+                }), use_container_width=True, hide_index=True)
             else:
                 st.info("لا توجد سجلات تأخير مسجلة")
             
@@ -575,51 +572,29 @@ def render_settings(df_emp, df_kpi, df_data):
             op1, op2, op3, op4 = st.columns(4)
             
             with op1:
-                with st.expander("➕ إضافة سجل تأخير يدوي"):
-                    if df_emp is not None and not df_emp.empty:
-                        emp_names = sorted(df_emp["EmployeeName"].dropna().astype(str).str.strip().tolist())
-                    else:
-                        emp_names = []
-                    
-                    new_emp = st.selectbox("الموظف", emp_names if emp_names else ["لا يوجد موظفين"], key="att_emp")
-                    
-                    emp_id_from_name = ""
-                    if new_emp and new_emp != "لا يوجد موظفين" and df_emp is not None:
-                        emp_row = df_emp[df_emp["EmployeeName"] == new_emp]
-                        if not emp_row.empty:
-                            emp_id_from_name = str(emp_row.iloc[0].get("رقم الموظف", ""))
-                    
-                    new_date = st.date_input("التاريخ", value=date.today(), key="att_date")
-                    new_late_hours = st.number_input("ساعات التأخير", min_value=0.0, value=0.0, step=0.5, key="att_hours")
-                    new_days_count = st.number_input("عدد الأيام", min_value=0, value=1, step=1, key="att_days")
-                    new_amount = st.number_input("القيمة (اختياري)", min_value=0.0, value=0.0, step=10.0, key="att_amount")
-                    
-                    if st.button("💾 إضافة السجل", key="add_att_btn"):
-                        if new_emp and new_emp != "لا يوجد موظفين":
-                            result = add_attendance_record(
-                                emp_name=new_emp,
-                                emp_id=emp_id_from_name,
-                                date_str=new_date.strftime("%Y-%m-%d"),
-                                late_hours=new_late_hours,
-                                days_count=new_days_count,
-                                amount=new_amount if new_amount > 0 else None
-                            )
-                            if result:
-                                st.success("✅ تم إضافة سجل التأخير")
+                with st.expander("➕ إضافة سجل يدوي"):
+                    if df_emp is not None:
+                        emp_names = sorted(df_emp["EmployeeName"].dropna().tolist())
+                        emp = st.selectbox("الموظف", emp_names)
+                        emp_id = df_emp[df_emp["EmployeeName"]==emp].iloc[0].get("رقم الموظف", "") if emp else ""
+                        year = st.number_input("السنة", min_value=2020, max_value=2030, value=2026)
+                        month = st.selectbox("الشهر", list(range(1, 13)), format_func=lambda x: f"{x} - {['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'][x-1]}")
+                        late_count = st.number_input("عدد مرات التأخير", min_value=0, step=1)
+                        total_hours = st.number_input("إجمالي ساعات التأخير", min_value=0.0, step=0.5)
+                        if st.button("💾 إضافة"):
+                            if add_attendance_manual(emp, emp_id, year, month, late_count, total_hours):
+                                st.success("✅ تم الإضافة")
                                 st.rerun()
                             else:
-                                st.error("⚠️ هذا السجل موجود مسبقاً (نفس الموظف والتاريخ)")
-                        else:
-                            st.error("⚠️ اختر موظفاً أولاً")
+                                st.error("⚠️ هذا السجل موجود مسبقاً")
             
             with op2:
-                with st.expander("📥 استيراد من Excel"):
-                    uploaded = st.file_uploader("اختر ملف Excel", type=["xlsx", "xls"], key="att_upload")
+                with st.expander("📥 استيراد Excel"):
+                    uploaded = st.file_uploader("اختر ملف Excel", type=["xlsx", "xls"])
                     if uploaded:
-                        st.info("الأعمدة المطلوبة: رقم الموظف، اسم الموظف، التاريخ، ساعات التاخير، عدد الايام، القيمة (اختياري)")
-                        clear_old = st.checkbox("🗑️ مسح السجلات القديمة قبل الاستيراد", value=False, key="att_clear")
-                        if st.button("بدء الاستيراد", key="att_import_btn"):
-                            success, msg = import_attendance_from_excel(uploaded, clear_old=clear_old)
+                        clear_old = st.checkbox("🗑️ مسح السجلات القديمة قبل الاستيراد")
+                        if st.button("بدء الاستيراد"):
+                            success, msg = import_attendance_from_excel(uploaded, clear_old)
                             if success:
                                 st.success(msg)
                                 st.rerun()
@@ -630,47 +605,33 @@ def render_settings(df_emp, df_kpi, df_data):
                 with st.expander("📤 تصدير إلى Excel"):
                     years = get_attendance_unique_years()
                     if years:
-                        export_year = st.selectbox("السنة", ["-- الكل --"] + years, key="att_export_year")
-                        if export_year != "-- الكل --":
-                            export_year_val = int(export_year)
-                        else:
-                            export_year_val = None
-                    else:
-                        export_year_val = None
-                    
-                    if st.button("إنشاء ملف Excel", key="att_export_btn"):
-                        buf = export_attendance_to_excel(year=export_year_val)
-                        filename = f"attendance_{export_year_val}.xlsx" if export_year_val else "attendance_all.xlsx"
-                        st.download_button(
-                            "⬇️ تحميل",
-                            data=buf,
-                            file_name=filename,
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            key="att_download"
-                        )
+                        export_year = st.selectbox("السنة", ["-- الكل --"] + years)
+                        export_year_val = None if export_year == "-- الكل --" else int(export_year)
+                        if st.button("إنشاء ملف Excel"):
+                            buf = export_attendance_to_excel(year=export_year_val)
+                            filename = f"attendance_{export_year_val}.xlsx" if export_year_val else "attendance_all.xlsx"
+                            st.download_button("⬇️ تحميل", data=buf, file_name=filename)
             
             with op4:
-                with st.expander("🗑️ حذف سجل"):
-                    if all_records:
-                        record_options = {f"{r.get('employee_name', '')} - {r.get('date', '')} - {r.get('late_hours', 0)} ساعة": r.get("id") 
-                                         for r in all_records}
-                        selected = st.selectbox("اختر السجل", list(record_options.keys()), key="att_del_sel")
-                        if st.button("🗑️ حذف", type="primary", key="att_del_btn"):
-                            record_id = record_options[selected]
-                            delete_attendance_record(record_id)
-                            st.success("✅ تم حذف السجل")
+                with st.expander("🗑️ حذف"):
+                    if records:
+                        record_options = {f"{r.get('employee_name', '')} - {r.get('year', '')}/{r.get('month', '')}": r.get("id") for r in records}
+                        selected = st.selectbox("اختر السجل", list(record_options.keys()))
+                        if st.button("🗑️ حذف"):
+                            delete_attendance_record(record_options[selected])
+                            st.success("✅ تم الحذف")
                             st.rerun()
-                    else:
-                        st.info("لا توجد سجلات للحذف")
             
             st.markdown("---")
             
-            with st.expander("⚠️ تنظيف كامل (استخدام بحذر)"):
-                st.warning("⚠️ تحذير: هذا الإجراء يمسح **جميع** سجلات الالتزام بالدوام نهائياً")
-                if st.button("🗑️ حذف جميع السجلات", type="secondary", key="att_clear_all_btn"):
+            with st.expander("⚠️ تنظيف كامل"):
+                st.warning("⚠️ تحذير: هذا الإجراء يمسح **جميع** السجلات نهائياً")
+                if st.button("🗑️ حذف الكل", type="secondary"):
                     clear_all_attendance()
-                    st.success("✅ تم حذف جميع السجلات")
+                    st.success("✅ تم الحذف")
                     st.rerun()
+    else:
+        st.info("⚠️ ملف attendance_manager.py غير موجود")
 
     # ══════════════════════════════════════════════════════════════════
     # قاعدة البيانات
