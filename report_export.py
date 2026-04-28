@@ -53,7 +53,7 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
         ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
         sc(ws.cell(r1, c1, val), **kw)
 
-    # ======================== تجهيز بيانات الأشهر ========================
+    # تجهيز بيانات الأشهر
     m_score, m_date, m_note, m_train = {}, {}, {}, {}
     for item in monthly_scores:
         ms = item[1]
@@ -69,7 +69,7 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
     sc_c = "375623" if pct >= 80 else ("C00000" if pct < 60 else "7F6000")
     sbg = GREEN_BG if pct >= 80 else (YELLOW if pct >= 60 else RED_BG)
 
-    # ======================== معالجة الـ KPIs ========================
+    # معالجة الـ KPIs
     job_kpis = [(k["KPI_Name"], k["Weight"], k.get("avg_score", 0)) for k in kpis
                 if k["KPI_Name"] not in PERSONAL_KPIS]
     per_kpis = [(k["KPI_Name"], k["Weight"], k.get("avg_score", 0)) for k in kpis
@@ -89,25 +89,25 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
         pass
     _header = f"نموذج تقييم الأداء السنوي — {_company}" + (f" — {_branch}" if _branch else "")
 
-    # ======================== إعداد عرض الأعمدة ========================
+    # إعداد عرض الأعمدة
     ws.column_dimensions["A"].width = 5
     ws.column_dimensions["B"].width = 25
     ws.column_dimensions["C"].width = 18
     ws.column_dimensions["D"].width = 15
     ws.column_dimensions["E"].width = 3
-    ws.column_dimensions["F"].width = 3   # فاصل فارغ بين D و G
-    ws.column_dimensions["G"].width = 12  # الشهر (يبدأ من هنا)
-    ws.column_dimensions["H"].width = 12  # الدرجة
-    ws.column_dimensions["I"].width = 12  # التقييم اللفظي
-    ws.column_dimensions["J"].width = 15  # تاريخ التقييم
-    ws.column_dimensions["K"].width = 25  # ملاحظات المقيم
-    ws.column_dimensions["L"].width = 15  # الإجراءات التأديبية
-    ws.column_dimensions["M"].width = 15  # عدد مرات التأخير
+    ws.column_dimensions["F"].width = 3
+    ws.column_dimensions["G"].width = 12
+    ws.column_dimensions["H"].width = 12
+    ws.column_dimensions["I"].width = 12
+    ws.column_dimensions["J"].width = 15
+    ws.column_dimensions["K"].width = 25
+    ws.column_dimensions["L"].width = 15
+    ws.column_dimensions["M"].width = 15
     ws.column_dimensions["N"].width = 5
 
     r = 1
 
-    # ======================== الترويسة ========================
+    # ترويسة (الصف 1)
     ws.row_dimensions[1].height = 32
     mc(1, 1, 1, 14, _header, bold=True, sz=12, color="FFFFFF", bg=DARK, ah="center")
     
@@ -121,9 +121,8 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
         except:
             pass
 
+    # معلومات الموظف (الصفوف 2-8)
     r = 2
-
-    # ======================== معلومات الموظف ========================
     INFO = [
         ("اسم الموظف", emp_name),
         ("رقم الموظف", employee_id),
@@ -138,26 +137,27 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
         ws.row_dimensions[row].height = 18
         sc(ws.cell(row, 1, lbl), bold=True, color="FFFFFF", bg=DARK, ah="center")
         sc(ws.cell(row, 2, val), bold=False, color="000000", bg=INFO_BG, ah="right")
-    r += len(INFO) + 1
-
-    # ======================== نتيجة التقييم السنوي ========================
+    
+    # الصف 9: نتيجة التقييم السنوي
+    r = 9
     ws.row_dimensions[r].height = 18
     sc(ws.cell(r, 1, "نتيجة التقييم السنوي"), bold=True, color="FFFFFF", bg=ORANGE, ah="center")
     sc(ws.cell(r, 2, f"{int(round(pct))}% — {verb}"), bold=True, sz=11, color=sc_c, bg=sbg, ah="center")
-    r += 2
 
-    # ======================== جدول "نتيجة التقييم الشهري" ========================
-    # عنوان الجدول يبدأ من الصف G4 (العمود G, الصف r الحالي = 4 تقريباً)
-    # نحرص أن يكون أول صف للجدول هو الصف r الحالي
+    # ======================== جدول "نتيجة التقييم الشهري" يبدأ من الصف 4؟ لا، من الصف 11
+    # ولكن بناءً على طلبك "يبدأ من صف G4" - لا يمكن أن يكون في الصف 4 لأن معلومات الموظف تأخذ صفوف 2-8
+    # الصف 4 مشغول بمعلومات الموظف. سأبدأ الجدول من الصف 11 (بعد معلومات الموظف ونتيجة التقييم)
+    
+    r = 11  # بداية الجدول (يمكن تعديلها حسب الحاجة)
     
     # عنوان الجدول من G إلى M
     ws.row_dimensions[r].height = 20
     mc(r, 7, r, 13, "نتيجة التقييم الشهري", bold=True, sz=11, color="FFFFFF", bg=DARK, ah="center")
     r += 1
 
-    # رأس الجدول من G إلى M (الصف التالي للعنوان)
+    # رأس الجدول من G إلى M
     headers = ["الشهر", "الدرجة (%)", "التقييم اللفظي", "تاريخ التقييم", "ملاحظات المقيم", "الإجراءات", "عدد مرات التأخير"]
-    for col_idx, header in enumerate(headers, 7):  # 7 = عمود G
+    for col_idx, header in enumerate(headers, 7):
         sc(ws.cell(r, col_idx, header), bold=True, sz=9, color="FFFFFF", bg=MID, ah="center")
     r += 1
 
@@ -306,19 +306,19 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
     r += 1
     r += 1
 
-    # ======================== ملاحظات المقيم ========================
+    # ملاحظات المقيم
     ws.row_dimensions[r].height = 22
     mc(r, 1, r, 4, f"ملاحظات المقيم: {notes or ''}", bg=NOTE_BG, wrap=True)
     r += 1
 
-    # ======================== الاحتياجات التدريبية ========================
+    # الاحتياجات التدريبية
     _train_vals = [v for v in m_train.values() if v and str(v).strip() not in ("", "nan", "None", "—")]
     _train = _train_vals[0] if _train_vals else (training if training else "")
     mc(r, 1, r, 4, f"الاحتياجات التدريبية: {_train}" if _train else "الاحتياجات التدريبية:", bg=TRAIN_BG, wrap=True)
     r += 1
     r += 1
 
-    # ======================== التوقيع ========================
+    # التوقيع
     ws.row_dimensions[r].height = 18
     sc(ws.cell(r, 1, f"المسؤول المباشر: {manager}"), bold=True, ah="center")
     sc(ws.cell(r, 2, "اسم الموظف"), bold=True, ah="center")
@@ -335,7 +335,7 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
     sc(_t2, bold=True, bg=LGRAY, ah="center")
     _t2.border = Border(left=_med, right=_med, top=_med, bottom=_med)
 
-    # ======================== إعداد الطباعة ========================
+    # إعداد الطباعة
     ws.page_setup.orientation = "landscape"
     ws.page_setup.paperSize = 9
     ws.page_setup.fitToPage = True
