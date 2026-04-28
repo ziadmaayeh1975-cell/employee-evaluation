@@ -8,7 +8,7 @@ try:
     PLOTLY_OK = True
 except ImportError:
     PLOTLY_OK = False
-from constants import MONTHS_AR, MONTHS_EN, MONTHS_SHORT, MONTH_MAP, PERSONAL_KPIS
+from constants import MONTHS_AR, MONTHS_EN, MONTHS_SHORT, MONTH_MAP, PERSONAL_KPIS, PERSONAL_WEIGHT
 from calculations import calc_monthly, get_kpi_avgs, verbal_grade, grade_color_hex, kpi_score_to_pct, rating_label
 from data_loader import get_emp_notes
 from auth import get_current_reviewer, get_current_role
@@ -143,13 +143,11 @@ def render_employee_report(df_emp, df_kpi, df_data):
             avg_score = sum(scores) / len(scores) if scores else 0.0
             pers_kpis2.append((kpi_name, weight, avg_score))
 
-    # حساب المتوسط السنوي
     avg2 = sum(s for _,_,s in done2)/len(done2) if done2 else 0.0
     pct2 = avg2 * 100
     verb2 = verbal_grade(pct2)
     clr2 = grade_color_hex(pct2)
 
-    # حساب متوسطات الوظيفي والشخصي
     job_scores_monthly = []
     pers_scores_monthly = []
     for en in MONTHS_EN:
@@ -175,7 +173,6 @@ def render_employee_report(df_emp, df_kpi, df_data):
         _fb = get_emp_notes(sel2)
         notes2, training2 = _fb[0] if len(_fb)>0 else "", _fb[1] if len(_fb)>1 else ""
 
-    # جلب الإجراءات التأديبية
     disciplinary_df = None
     try:
         from disciplinary_manager import get_actions_by_employee
@@ -185,8 +182,6 @@ def render_employee_report(df_emp, df_kpi, df_data):
     except Exception as e:
         st.warning(f"⚠️ خطأ في الإجراءات التأديبية: {e}")
 
-    # ======================== عرض واجهة التقرير ========================
-    # 1. معلومات الموظف (مرة واحدة)
     st.markdown(f"""
     <div style="background:#F8FAFC;border:1px solid #CBD5E1;border-radius:12px;padding:16px;margin-bottom:10px;direction:rtl;">
         <h2 style="margin:0 0 4px;color:#1E3A8A;">{sel2}</h2>
@@ -196,33 +191,34 @@ def render_employee_report(df_emp, df_kpi, df_data):
     </div>
     """, unsafe_allow_html=True)
 
-    # 2. النتيجة النهائية وبطاقات المتوسطات
-    col_res, col_res2 = st.columns(2)
-    with col_res:
+    st.markdown(f"""
+    <div style="background:white;border:2px solid #1E3A8A;border-radius:12px;padding:18px;text-align:center;margin-bottom:12px;">
+        <div style="font-size:13px;color:#64748B;">✅ النتيجة النهائية السنوية</div>
+        <div style="font-size:3rem;font-weight:bold;color:{clr2};">{int(round(pct2))}%</div>
+        <div style="font-size:1.1rem;color:{clr2};">{verb2}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
+    with col1:
         st.markdown(f"""
-        <div style="background:white;border:2px solid #1E3A8A;border-radius:12px;padding:18px;text-align:center;margin-bottom:12px;">
-            <div style="font-size:13px;color:#64748B;">✅ النتيجة النهائية السنوية</div>
-            <div style="font-size:3rem;font-weight:bold;color:{clr2};">{int(round(pct2))}%</div>
-            <div style="font-size:1.1rem;color:{clr2};">{verb2}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col_res2:
-        st.markdown(f"""
-        <div style="background:white;border:1px solid #ED7D31;border-radius:12px;padding:14px;text-align:center;">
+        <div style="background:white;border:1px solid #1E3A8A;border-radius:12px;padding:14px;text-align:center;">
             <div style="font-size:12px;color:#64748B;">🎯 متوسط الأداء الوظيفي</div>
             <div style="font-size:2rem;font-weight:bold;color:#1E3A8A;">{job_avg2}%</div>
-            <hr style="margin:8px 0;">
+        </div>
+        """, unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"""
+        <div style="background:white;border:1px solid #ED7D31;border-radius:12px;padding:14px;text-align:center;">
             <div style="font-size:12px;color:#64748B;">🌟 متوسط الصفات الشخصية</div>
             <div style="font-size:2rem;font-weight:bold;color:#ED7D31;">{pers_avg2}%</div>
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("---") # فاصل بصري
-
-    # ======================== القسم الأساسي: جدولين متجانبين ========================
     if done2:
-        # --- الجدول الأيسر: نتيجة التقييم الشهري (كما طلبت) ---
+        st.markdown("---")
         st.markdown("### 📅 نتيجة التقييم الشهري")
+        
         monthly_table_data = []
         for n, short, score, ev_date, note, train in monthly_rep:
             month_name = MONTHS_AR[n-1]
@@ -231,8 +227,8 @@ def render_employee_report(df_emp, df_kpi, df_data):
                     "الشهر": month_name,
                     "الدرجة (%)": f"{round(score*100, 1)}%",
                     "التقييم اللفظي": verbal_grade(score*100),
-                    "تاريخ التقييم": ev_date,
-                    "ملاحظات المقيم": note
+                    "تاريخ التقييم": ev_date if ev_date else "—",
+                    "ملاحظات المقيم": note if note else "—"
                 })
             else:
                 monthly_table_data.append({
@@ -243,44 +239,44 @@ def render_employee_report(df_emp, df_kpi, df_data):
                     "ملاحظات المقيم": "—"
                 })
         
-        # عرض الجدول الشهري بشكل بارز
         st.dataframe(
             pd.DataFrame(monthly_table_data), 
             use_container_width=True, 
-            hide_index=True
+            hide_index=True,
+            column_config={
+                "الشهر": st.column_config.TextColumn("الشهر", width="small"),
+                "الدرجة (%)": st.column_config.TextColumn("الدرجة", width="small"),
+                "التقييم اللفظي": st.column_config.TextColumn("التقييم", width="medium"),
+                "تاريخ التقييم": st.column_config.TextColumn("تاريخ التقييم", width="medium"),
+                "ملاحظات المقيم": st.column_config.TextColumn("ملاحظات المقيم", width="large"),
+            }
         )
+        
+        st.markdown("---")
+        st.subheader("🎯 مؤشرات الأداء الوظيفي")
+        if job_kpis2:
+            job_df = pd.DataFrame([{
+                "المؤشر": k,
+                "الوزن (%)": w,
+                "الدرجة (0-100)": round(kpi_score_to_pct(g, w), 1),
+                "التقييم": rating_label(kpi_score_to_pct(g, w))
+            } for k, w, g in job_kpis2])
+            st.dataframe(job_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("لا توجد مؤشرات أداء وظيفي")
 
-        st.markdown("---") # فاصل قبل بقية المحتوى
+        st.subheader("🌟 مؤشرات الصفات الشخصية")
+        if pers_kpis2:
+            pers_df = pd.DataFrame([{
+                "المؤشر": k,
+                "الوزن (%)": w,
+                "الدرجة (0-100)": round(kpi_score_to_pct(g, w), 1),
+                "التقييم": rating_label(kpi_score_to_pct(g, w))
+            } for k, w, g in pers_kpis2])
+            st.dataframe(pers_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("لا توجد مؤشرات صفات شخصية")
 
-        # --- الأجزاء الأخرى (مؤشرات الأداء، إجراءات، رسم بياني) ---
-        col_kpi, col_pers = st.columns(2)
-        with col_kpi:
-            st.subheader("🎯 مؤشرات الأداء الوظيفي")
-            if job_kpis2:
-                job_df = pd.DataFrame([{
-                    "المؤشر": k,
-                    "الوزن (%)": w,
-                    "الدرجة (0-100)": round(kpi_score_to_pct(g, w), 1),
-                    "التقييم": rating_label(kpi_score_to_pct(g, w))
-                } for k, w, g in job_kpis2])
-                st.dataframe(job_df, use_container_width=True, hide_index=True)
-            else:
-                st.info("لا توجد مؤشرات")
-
-        with col_pers:
-            st.subheader("🌟 مؤشرات الصفات الشخصية")
-            if pers_kpis2:
-                pers_df = pd.DataFrame([{
-                    "المؤشر": k,
-                    "الوزن (%)": w,
-                    "الدرجة (0-100)": round(kpi_score_to_pct(g, w), 1),
-                    "التقييم": rating_label(kpi_score_to_pct(g, w))
-                } for k, w, g in pers_kpis2])
-                st.dataframe(pers_df, use_container_width=True, hide_index=True)
-            else:
-                st.info("لا توجد مؤشرات")
-
-        # الإجراءات التأديبية
         if disciplinary_df is not None and not disciplinary_df.empty:
             st.subheader("⚠️ الإجراءات التأديبية المسجلة")
             disc_display = disciplinary_df.copy()
@@ -295,14 +291,12 @@ def render_employee_report(df_emp, df_kpi, df_data):
             if available_cols:
                 st.dataframe(disc_display[available_cols], use_container_width=True, hide_index=True)
 
-        # ملاحظات وتدريب
         cn, ct = st.columns(2)
         with cn:
             st.info(f"📝 **ملاحظات المقيم:** {notes2 or '—'}")
         with ct:
             st.info(f"🎓 **الاحتياجات التدريبية:** {training2 or '—'}")
 
-        # الرسم البياني (اختياري)
         months_done_list = [(MONTHS_AR[n-1], round(s*100, 1)) for n, _, s, *_ in monthly_rep if s > 0]
         if months_done_list and PLOTLY_OK:
             st.markdown("---")
@@ -310,12 +304,11 @@ def render_employee_report(df_emp, df_kpi, df_data):
             colors = ["#4472C4","#ED7D31","#A5A5A5","#FFC000","#5B9BD5","#70AD47","#264478","#9E480E","#636363","#997300","#255E91","#43682B"]
             for i,(mon, sc) in enumerate(months_done_list):
                 fig.add_trace(go.Bar(name=mon, x=[mon], y=[sc], marker_color=colors[i%len(colors)], text=f"{sc}%", textposition="outside"))
-            fig.update_layout(barmode="group", title=f"التقييم السنوي — {sel2} — {sel2_year}", xaxis_title="الأشهر", yaxis_title="الدرجة %", yaxis_range=[0,120], height=420)
+            fig.update_layout(barmode="group", title=f"التقييم السنوي — {sel2} — {sel2_year}", xaxis_title="الأشهر", yaxis_title="الدرجة %", yaxis_range=[0, 120], height=420)
             st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("لا توجد تقييمات في الفترة المحددة.")
+        st.info("لا توجد تقييمات")
 
-    # 6. تحميل التقرير
     st.subheader("⬇️ تحميل التقرير")
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
