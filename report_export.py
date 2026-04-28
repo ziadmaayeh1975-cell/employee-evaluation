@@ -245,7 +245,21 @@ def build_summary_sheet(wb, rows, title="ملخص التقييم", year=None, ch
         ws.column_dimensions[col].width = w
 
     ws.row_dimensions[1].height = 36
-    mc(ws, 1, 1, 1, 7, title, bold=True, sz=12, color="FFFFFF", bg=DARK, ah="center", av="center", brd="outer")
+    
+    # تعريف الدالتين المساعدتين داخل الدالة
+    def _sc(cell, val=None, bold=False, sz=9, color="000000", bg=None, ah="right", av="center", brd="inner"):
+        if val is not None: cell.value = val
+        cell.font = Font(name="Arial", bold=bold, size=sz, color=color)
+        cell.alignment = Alignment(horizontal=ah, vertical=av, readingOrder=2)
+        if bg: cell.fill = PatternFill("solid", fgColor=bg)
+        if brd == "outer": cell.border = OUTER_B
+        else: cell.border = INNER_B
+    
+    def _mc(r1, c1, r2, c2, val=None, **kw):
+        ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
+        _sc(ws.cell(r1, c1, val), **kw)
+    
+    _mc(1, 1, 1, 7, title, bold=True, sz=12, color="FFFFFF", bg=DARK, ah="center", av="center", brd="outer")
 
     import os as _os2
     from openpyxl.drawing.image import Image as XLImg2
@@ -262,17 +276,6 @@ def build_summary_sheet(wb, rows, title="ملخص التقييم", year=None, ch
 
     ws.row_dimensions[2].height = 4
     ws.row_dimensions[3].height = 16
-    def _sc(cell, val=None, bold=False, sz=9, color="000000", bg=None, ah="right", av="center", brd="inner"):
-        if val is not None: cell.value = val
-        cell.font = Font(name="Arial", bold=bold, size=sz, color=color)
-        cell.alignment = Alignment(horizontal=ah, vertical=av, readingOrder=2)
-        if bg: cell.fill = PatternFill("solid", fgColor=bg)
-        if brd == "outer": cell.border = OUTER_B
-        else: cell.border = INNER_B
-    def _mc(ws, r1, c1, r2, c2, val=None, **kw):
-        ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
-        _sc(ws.cell(r1, c1, val), **kw)
-
     for c, t in [(1, "#"), (2, "اسم الموظف"), (3, "القسم"), (4, "السنة"), (5, "الأشهر"), (6, "المعدل %"), (7, "التقييم")]:
         _sc(ws.cell(3, c, t), bold=True, sz=9, color="FFFFFF", bg=DARK, ah="center", brd="outer")
 
