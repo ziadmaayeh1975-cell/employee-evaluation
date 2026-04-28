@@ -8,106 +8,84 @@ from constants import *
 from calculations import verbal_grade, kpi_score_to_pct, rating_label
 from excel_reports import print_preview_html
 
-
-def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, monthly_scores,
-                         notes="", training="", chart_img=None, disciplinary_actions=None,
-                         employee_id="", attendance_data=None):
+def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, monthly_scores, notes="", training="", chart_img=None, disciplinary_actions=None, employee_id="", attendance_data=None):
     safe = emp_name[:28]
     if safe in [s.title for s in wb.worksheets]:
-        safe = safe[:25] + "_2"
+        safe = safe[:25]+"_2"
     ws = wb.create_sheet(safe)
     ws.sheet_view.rightToLeft = True
     ws.sheet_view.showGridLines = False
 
-    # ── ألوان ──
-    DARK, MID, ORANGE       = "1F3864", "2E75B6", "ED7D31"
-    LGRAY, WHITE, YELLOW    = "F2F2F2", "FFFFFF", "FFF2CC"
-    GREEN_BG, RED_BG        = "E2EFDA", "FFDAD9"
-    WARM                    = "FFF3E0"
-    NOTE_BG, TRAIN_BG       = "FFFDE7", "F3E5F5"
-    INFO_BG                 = "EBF3FB"
-    DISC_BG                 = "FEE2E2"
-    ATT_BG                  = "E0F2FE"
-    MONTH_HDR_BG            = "264478"   # لون هيدر جدول الشهري
-    MONTH_ROW_BG            = "D6E4F7"   # لون صفوف الشهري
+    # ألوان
+    DARK, MID, ORANGE = "1F3864","2E75B6","ED7D31"
+    LGRAY, WHITE, YELLOW, GREEN_BG, RED_BG = "F2F2F2","FFFFFF","FFF2CC","E2EFDA","FFDAD9"
+    WARM, NOTE_BG, TRAIN_BG, DATE_BG, INFO_BG, DISC_BG, ATT_BG = "FFF3E0","FFFDE7","F3E5F5","E3F2FD","EBF3FB","FEE2E2","E0F2FE"
 
     _med, _thn = Side(style="medium"), Side(style="thin")
+    BK, TN = Border(left=_med,right=_med,top=_med,bottom=_med), Border(left=_thn,right=_thn,top=_thn,bottom=_thn)
 
-    def sc(cell, val=None, bold=False, sz=9, color="000000", bg=None,
-           ah="right", av="center", wrap=False):
-        if val is not None:
-            cell.value = val
+    def sc(cell, val=None, bold=False, sz=9, color="000000", bg=None, ah="right", av="center", wrap=False):
+        if val is not None: cell.value = val
         cell.font = Font(name="Arial", bold=bold, size=sz, color=color)
         cell.alignment = Alignment(horizontal=ah, vertical=av, wrapText=wrap, readingOrder=2)
-        if bg:
-            cell.fill = PatternFill("solid", fgColor=bg)
+        if bg: cell.fill = PatternFill("solid", fgColor=bg)
+    
+    def mc(r1,c1,r2,c2,val=None,**kw):
+        ws.merge_cells(start_row=r1,start_column=c1,end_row=r2,end_column=c2)
+        sc(ws.cell(r1,c1,val),**kw)
 
-    def mc(r1, c1, r2, c2, val=None, **kw):
-        ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
-        sc(ws.cell(r1, c1, val), **kw)
-
-    # ── تجهيز بيانات الأشهر ──
-    _MAR = {
-        "Jan": "يناير", "Feb": "فبراير", "Mar": "مارس",  "Apr": "أبريل",
-        "May": "مايو",  "Jun": "يونيو",  "Jul": "يوليو", "Aug": "أغسطس",
-        "Sep": "سبتمبر","Oct": "أكتوبر","Nov": "نوفمبر","Dec": "ديسمبر",
-    }
-    m_score, m_date, m_note, m_train = {}, {}, {}, {}
+    # تجهيز بيانات الأشهر
+    m_score = {}
+    m_date = {}
+    m_note = {}
+    m_train = {}
     for item in monthly_scores:
         ms = item[1]
-        def _v(x): return str(x).strip() if x not in (None, "nan", "None") else ""
+        def _v(x): return str(x).strip() if x not in (None,"nan","None") else ""
         m_score[ms] = item[2]
-        m_date[ms]  = _v(item[3]) if len(item) > 3 else ""
-        m_note[ms]  = _v(item[4]) if len(item) > 4 else ""
-        m_train[ms] = _v(item[5]) if len(item) > 5 else ""
+        m_date[ms] = _v(item[3]) if len(item)>3 else ""
+        m_note[ms] = _v(item[4]) if len(item)>4 else ""
+        m_train[ms] = _v(item[5]) if len(item)>5 else ""
 
-    done = [(n, m, s) for n, m, s, *_ in monthly_scores if s > 0]
-    pct  = sum(s for _, _, s in done) / len(done) * 100 if done else 0
+    done = [(n,m,s) for n,m,s,*_ in monthly_scores if s>0]
+    pct = sum(s for _,_,s in done)/len(done)*100 if done else 0
     verb = verbal_grade(pct)
-    sc_c = "375623" if pct >= 80 else ("C00000" if pct < 60 else "7F6000")
-    sbg  = GREEN_BG if pct >= 80 else (YELLOW if pct >= 60 else RED_BG)
+    sc_c = "375623" if pct>=80 else ("C00000" if pct<60 else "7F6000")
+    sbg = GREEN_BG if pct>=80 else (YELLOW if pct>=60 else RED_BG)
 
-    # ── تصفية KPIs ──
-    def _safe_kpi(k):
-        name = k.get("KPI_Name") if isinstance(k, dict) else None
-        return name and str(name).strip() not in ("", "nan", "None")
+    # معالجة الـ KPIs
+    job_kpis = [(k["KPI_Name"],k["Weight"],k.get("avg_score",0)) for k in kpis if k["KPI_Name"] not in PERSONAL_KPIS]
+    per_kpis = [(k["KPI_Name"],k["Weight"],k.get("avg_score",0)) for k in kpis if k["KPI_Name"] in PERSONAL_KPIS]
 
-    job_kpis = [
-        (k["KPI_Name"], k.get("Weight", 0), k.get("avg_score", 0))
-        for k in kpis if _safe_kpi(k) and str(k["KPI_Name"]).strip() not in PERSONAL_KPIS
-    ]
-    per_kpis = [
-        (k["KPI_Name"], k.get("Weight", 0), k.get("avg_score", 0))
-        for k in kpis if _safe_kpi(k) and str(k["KPI_Name"]).strip() in PERSONAL_KPIS
-    ]
-
-    # ── إعدادات الشركة ──
-    _company, _branch = "", ""
+    _MAR = {"Jan":"يناير","Feb":"فبراير","Mar":"مارس","Apr":"أبريل","May":"مايو","Jun":"يونيو","Jul":"يوليو","Aug":"أغسطس","Sep":"سبتمبر","Oct":"أكتوبر","Nov":"نوفمبر","Dec":"ديسمبر"}
+    
+    _company = ""
+    _branch = ""
     try:
         from auth import load_app_settings as _las
-        _cfg     = _las()
+        _cfg = _las()
         _company = _cfg.get("company_name", "مجموعة شركات فنون")
-        _branch  = _cfg.get("branch_name", "")
+        _branch = _cfg.get("branch_name", "")
     except:
         pass
     _header = f"نموذج تقييم الأداء السنوي — {_company}" + (f" — {_branch}" if _branch else "")
 
-    # ── عرض الأعمدة ──
-    ws.column_dimensions["A"].width = 28
-    ws.column_dimensions["B"].width = 18
-    ws.column_dimensions["C"].width = 18
-    ws.column_dimensions["D"].width = 18
-    ws.column_dimensions["E"].width = 18
-    ws.column_dimensions["F"].width = 18
-    ws.column_dimensions["G"].width = 20
+    # إعداد عرض الأعمدة
+    ws.column_dimensions["A"].width = 15
+    ws.column_dimensions["B"].width = 12
+    ws.column_dimensions["C"].width = 15
+    ws.column_dimensions["D"].width = 15
+    ws.column_dimensions["E"].width = 25
+    ws.column_dimensions["F"].width = 20
+    ws.column_dimensions["G"].width = 18
     ws.column_dimensions["H"].width = 20
 
-    # ══════════════════════════════════════════════════════════════════
-    # ترويسة
-    # ══════════════════════════════════════════════════════════════════
     r = 1
+    
+    # عنوان التقرير
     ws.row_dimensions[1].height = 32
-    mc(1, 1, 1, 8, _header, bold=True, sz=11, color="FFFFFF", bg=DARK, ah="center")
+    mc(1, 1, 1, 8, _header, bold=True, sz=12, color="FFFFFF", bg=DARK, ah="center")
+    
     _logo = globals().get("LOGO_PATH", "logo.png")
     if os.path.exists(_logo):
         try:
@@ -118,186 +96,178 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
         except:
             pass
 
-    # ══════════════════════════════════════════════════════════════════
-    # معلومات الموظف
-    # ══════════════════════════════════════════════════════════════════
     r = 2
+    
+    # معلومات الموظف
     INFO = [
-        ("اسم الموظف",   emp_name),
-        ("رقم الموظف",   employee_id),
-        ("الوظيفة",      job_title),
-        ("القسم",        dept),
-        ("السنة",        str(year)),
-        ("اسم المقيم",   manager),
+        ("اسم الموظف", emp_name),
+        ("رقم الموظف", employee_id),
+        ("الوظيفة", job_title),
+        ("القسم", dept),
+        ("السنة", str(year)),
+        ("اسم المقيم", manager),
         ("تاريخ التقييم", date.today().strftime("%d/%m/%Y")),
     ]
+    
     for i, (lbl, val) in enumerate(INFO):
         row = r + i
         ws.row_dimensions[row].height = 18
         sc(ws.cell(row, 1, lbl), bold=True, color="FFFFFF", bg=DARK, ah="center")
-        mc(row, 2, row, 8, val, bold=True, color="000000", bg=INFO_BG, ah="right")
-    r += len(INFO)
+        sc(ws.cell(row, 2, val), bold=True, color="000000", bg=INFO_BG, ah="right")
+    r += len(INFO) + 1
 
-    # ══════════════════════════════════════════════════════════════════
     # نتيجة التقييم السنوي
-    # ══════════════════════════════════════════════════════════════════
     ws.row_dimensions[r].height = 18
     sc(ws.cell(r, 1, "نتيجة التقييم السنوي"), bold=True, color="FFFFFF", bg=ORANGE, ah="center")
     mc(r, 2, r, 3, f"{int(round(pct))}% — {verb}", bold=True, sz=11, color=sc_c, bg=sbg, ah="center")
+    r += 2
+
+    # ============================================================
+    # جدول نتيجة التقييم الشهري (المطلوب)
+    # ============================================================
+    ws.row_dimensions[r].height = 20
+    sc(ws.cell(r, 1, "نتيجة التقييم الشهري"), bold=True, sz=11, color="FFFFFF", bg=DARK, ah="center")
+    mc(r, 2, r, 7, "", bold=False)  # دمج الخلايا للعنوان
     r += 1
-
-    # ══════════════════════════════════════════════════════════════════
-    # ✅ جدول نتيجة التقييم الشهري (المضاف)
-    # ══════════════════════════════════════════════════════════════════
-    ws.row_dimensions[r].height = 3; r += 1
-
-    ws.row_dimensions[r].height = 16
-    mc(r, 1, r, 8, "📅 نتيجة التقييم الشهري", bold=True, sz=10,
-       color="FFFFFF", bg=MONTH_HDR_BG, ah="center")
+    
+    # رأس الجدول
+    headers = ["الشهر", "الدرجة (%)", "التقييم اللفظي", "تاريخ التقييم", "ملاحظات المقيم", "الإجراءات", "عدد مرات التأخير"]
+    for col_idx, header in enumerate(headers, 1):
+        sc(ws.cell(r, col_idx, header), bold=True, sz=9, color="FFFFFF", bg=MID, ah="center")
     r += 1
-
-    # هيدر الجدول الشهري — 6 أعمدة موزعة على A:H
-    ws.row_dimensions[r].height = 14
-    monthly_headers = [
-        (1, 2, "الشهر"),
-        (3, 3, "الدرجة (%)"),
-        (4, 4, "التقييم"),
-        (5, 5, "تاريخ التقييم"),
-        (6, 7, "ملاحظات المقيم"),
-        (8, 8, "الإجراءات التأديبية"),
-    ]
-    for c1, c2, hdr in monthly_headers:
-        if c1 == c2:
-            sc(ws.cell(r, c1, hdr), bold=True, sz=8, color="FFFFFF",
-               bg=MONTH_HDR_BG, ah="center")
+    
+    # بيانات الأشهر
+    MONTHS_LIST = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", 
+                   "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"]
+    
+    for month_idx, month_name in enumerate(MONTHS_LIST, 1):
+        ws.row_dimensions[r].height = 16
+        rbg = LGRAY if month_idx % 2 == 0 else WHITE
+        
+        # العثور على بيانات الشهر من monthly_scores
+        month_data = None
+        for item in monthly_scores:
+            short = item[1]
+            month_num = list(_MAR.keys()).index(short) + 1 if short in _MAR else 0
+            if month_num == month_idx:
+                month_data = item
+                break
+        
+        if month_data and month_data[2] > 0:
+            score = month_data[2]
+            eval_date = month_data[3] if len(month_data) > 3 else ""
+            note = month_data[4] if len(month_data) > 4 else ""
+            score_pct = f"{round(score * 100, 1)}%"
+            verbal = verbal_grade(score * 100)
         else:
-            mc(r, c1, r, c2, hdr, bold=True, sz=8, color="FFFFFF",
-               bg=MONTH_HDR_BG, ah="center")
-    r += 1
-
-    # بناء فهرس الإجراءات التأديبية حسب الشهر
-    disc_by_month = {}
-    if disciplinary_actions is not None and not disciplinary_actions.empty:
-        for _, dr in disciplinary_actions.iterrows():
-            try:
-                import pandas as pd
-                dt  = pd.to_datetime(str(dr.get("action_date", "")))
-                key = dt.month
-                disc_by_month.setdefault(key, []).append(dr.get("warning_type", ""))
-            except:
-                pass
-
-    # صفوف الأشهر
-    short_to_num = {
-        "Jan": 1, "Feb": 2, "Mar": 3,  "Apr": 4,
-        "May": 5, "Jun": 6, "Jul": 7,  "Aug": 8,
-        "Sep": 9, "Oct": 10,"Nov": 11, "Dec": 12,
-    }
-    for idx, (num, short, score, ev_date, note, train) in enumerate(monthly_scores):
-        ws.row_dimensions[r].height = 14
-        rbg = MONTH_ROW_BG if idx % 2 == 0 else WHITE
-
-        month_ar = _MAR.get(short, short)
-        if score > 0:
-            pct_m   = round(score * 100, 1)
-            verb_m  = verbal_grade(pct_m)
-            clr_m   = GREEN_BG if pct_m >= 80 else (YELLOW if pct_m >= 60 else RED_BG)
-            score_s = f"{pct_m}%"
-        else:
-            verb_m, clr_m, score_s = "—", rbg, "—"
-
-        month_num  = short_to_num.get(short, 0)
-        disc_list  = disc_by_month.get(month_num, [])
-        disc_text  = " | ".join(disc_list) if disc_list else "—"
-        note_text  = note if note and note not in ("nan", "None") else "—"
-        date_text  = ev_date if ev_date and ev_date not in ("nan", "None") else "—"
-
-        mc(r, 1, r, 2, month_ar, bg=rbg, ah="center")
-        sc(ws.cell(r, 3, score_s), bold=score > 0, bg=clr_m, ah="center")
-        sc(ws.cell(r, 4, verb_m),  bold=score > 0, bg=clr_m, ah="center")
-        sc(ws.cell(r, 5, date_text), bg=rbg, ah="center")
-        mc(r, 6, r, 7, note_text, bg=rbg, ah="right", wrap=True)
-        sc(ws.cell(r, 8, disc_text), bg="FEE2E2" if disc_list else rbg, ah="center", wrap=True)
+            score_pct = "—"
+            verbal = "—"
+            eval_date = "—"
+            note = "—"
+        
+        sc(ws.cell(r, 1, month_name), bg=rbg, ah="center")
+        sc(ws.cell(r, 2, score_pct), bg=rbg, ah="center")
+        sc(ws.cell(r, 3, verbal), bg=rbg, ah="center")
+        sc(ws.cell(r, 4, eval_date), bg=rbg, ah="center")
+        sc(ws.cell(r, 5, note), bg=rbg, ah="right", wrap=True)
+        
+        # الإجراءات التأديبية (للشهر)
+        disc_text = ""
+        if disciplinary_actions is not None and not disciplinary_actions.empty:
+            month_disc = disciplinary_actions[disciplinary_actions["action_date"].str.contains(f"-{month_idx:02d}-")]
+            if not month_disc.empty:
+                disc_text = "، ".join(month_disc["warning_type"].unique())
+        sc(ws.cell(r, 6, disc_text if disc_text else "—"), bg=rbg, ah="center")
+        
+        # عدد مرات التأخير (للشهر)
+        late_count = 0
+        if attendance_data is not None and not attendance_data.empty:
+            if hasattr(attendance_data, 'iloc'):
+                att_row = attendance_data.iloc[0] if not attendance_data.empty else None
+                if att_row is not None:
+                    late_count = att_row.get("late_count", 0) if month_idx == 1 else 0
+            elif isinstance(attendance_data, dict):
+                late_count = attendance_data.get("late_count", 0)
+        sc(ws.cell(r, 7, str(late_count) if late_count > 0 else "—"), bg=rbg, ah="center")
+        
         r += 1
+    
+    r += 1
 
-    ws.row_dimensions[r].height = 3; r += 1
-
-    # ══════════════════════════════════════════════════════════════════
-    # مؤشرات الأداء الوظيفي
-    # ══════════════════════════════════════════════════════════════════
+    # جدول مؤشرات الأداء الوظيفي
     ws.row_dimensions[r].height = 16
     sc(ws.cell(r, 1, "مؤشرات الأداء الوظيفي"), bold=True, color="FFFFFF", bg=DARK, ah="right")
-    sc(ws.cell(r, 2, "الوزن النسبي %"),         bold=True, color="FFFFFF", bg=DARK, ah="center")
-    sc(ws.cell(r, 3, "الدرجة (0-100)"),          bold=True, color="FFFFFF", bg=DARK, ah="center")
-    sc(ws.cell(r, 4, "التقييم"),                  bold=True, color="FFFFFF", bg=DARK, ah="center")
+    sc(ws.cell(r, 2, "الوزن النسبي %"), bold=True, color="FFFFFF", bg=DARK, ah="center")
+    sc(ws.cell(r, 3, "الدرجة (0-100)"), bold=True, color="FFFFFF", bg=DARK, ah="center")
+    sc(ws.cell(r, 4, "التقييم"), bold=True, color="FFFFFF", bg=DARK, ah="center")
     r += 1
 
-    job_total_score, job_total_weight = 0.0, 0.0
+    job_total_score = 0.0
+    job_total_weight = 0.0
     for i, (kname, weight, grade) in enumerate(job_kpis):
         rbg = LGRAY if i % 2 == 0 else WHITE
-        w, g   = float(weight), float(grade)
+        w = float(weight)
+        g = float(grade)
         pct_val = round(kpi_score_to_pct(g, w), 1)
-        lbl    = rating_label(pct_val)
-        job_total_score  += g
+        lbl = rating_label(pct_val)
+        job_total_score += g
         job_total_weight += w
         kbg = GREEN_BG if pct_val >= 80 else (YELLOW if pct_val >= 60 else (RED_BG if pct_val > 0 else rbg))
         ws.row_dimensions[r].height = 16
-        sc(ws.cell(r, 1, kname),       bg=rbg, wrap=True)
+        sc(ws.cell(r, 1, kname), bg=rbg, wrap=True)
         sc(ws.cell(r, 2, f"{w:.1f}%"), bg=rbg, ah="center")
-        sc(ws.cell(r, 3, pct_val),     bold=True, bg=kbg, ah="center")
-        sc(ws.cell(r, 4, lbl),         bold=True, bg=kbg, ah="center")
+        sc(ws.cell(r, 3, pct_val), bold=True, bg=kbg, ah="center")
+        sc(ws.cell(r, 4, lbl), bold=True, bg=kbg, ah="center")
         r += 1
 
     ws.row_dimensions[r].height = 16
     sc(ws.cell(r, 1, "مجموع الأداء الوظيفي"), bold=True, color="FFFFFF", bg=MID, ah="right")
     sc(ws.cell(r, 2, f"{job_total_weight:.1f}%"), bold=True, color="FFFFFF", bg=MID, ah="center")
     job_pct_total = round(kpi_score_to_pct(job_total_score, job_total_weight), 1) if job_total_weight > 0 else 0
-    sc(ws.cell(r, 3, f"{job_pct_total}%"),       bold=True, color="FFFFFF", bg=MID, ah="center")
+    sc(ws.cell(r, 3, f"{job_pct_total}%"), bold=True, color="FFFFFF", bg=MID, ah="center")
     sc(ws.cell(r, 4, rating_label(job_pct_total)), bold=True, color="FFFFFF", bg=MID, ah="center")
     r += 1
-    ws.row_dimensions[r].height = 3; r += 1
+    r += 1
 
-    # ══════════════════════════════════════════════════════════════════
     # مؤشرات الصفات الشخصية
-    # ══════════════════════════════════════════════════════════════════
     ws.row_dimensions[r].height = 16
     mc(r, 1, r, 3, "مؤشرات الصفات الشخصية", bold=True, color="FFFFFF", bg=ORANGE, ah="center")
     r += 1
     ws.row_dimensions[r].height = 16
-    sc(ws.cell(r, 1, "المؤشر"),         bold=True, color="FFFFFF", bg=MID, ah="right")
+    sc(ws.cell(r, 1, "المؤشر"), bold=True, color="FFFFFF", bg=MID, ah="right")
     sc(ws.cell(r, 2, "الوزن النسبي %"), bold=True, color="FFFFFF", bg=MID, ah="center")
     sc(ws.cell(r, 3, "الدرجة (0-100)"), bold=True, color="FFFFFF", bg=MID, ah="center")
-    sc(ws.cell(r, 4, "التقييم"),         bold=True, color="FFFFFF", bg=MID, ah="center")
+    sc(ws.cell(r, 4, "التقييم"), bold=True, color="FFFFFF", bg=MID, ah="center")
     r += 1
 
-    per_total_score, per_total_weight = 0.0, 0.0
+    per_total_score = 0.0
+    per_total_weight = 0.0
     for i, (kname, weight, grade) in enumerate(per_kpis):
         rbg = WARM if i % 2 == 0 else WHITE
-        w, g   = float(weight), float(grade)
+        w = float(weight)
+        g = float(grade)
         pct_val = round(kpi_score_to_pct(g, w), 1)
-        lbl    = rating_label(pct_val)
-        per_total_score  += g
+        lbl = rating_label(pct_val)
+        per_total_score += g
         per_total_weight += w
         kbg = GREEN_BG if pct_val >= 80 else (YELLOW if pct_val >= 60 else (RED_BG if pct_val > 0 else rbg))
         ws.row_dimensions[r].height = 16
-        sc(ws.cell(r, 1, kname),       bg=rbg, wrap=True)
+        sc(ws.cell(r, 1, kname), bg=rbg, wrap=True)
         sc(ws.cell(r, 2, f"{w:.1f}%"), bg=rbg, ah="center")
-        sc(ws.cell(r, 3, pct_val),     bold=True, bg=kbg, ah="center")
-        sc(ws.cell(r, 4, lbl),         bold=True, bg=kbg, ah="center")
+        sc(ws.cell(r, 3, pct_val), bold=True, bg=kbg, ah="center")
+        sc(ws.cell(r, 4, lbl), bold=True, bg=kbg, ah="center")
         r += 1
 
     ws.row_dimensions[r].height = 16
     sc(ws.cell(r, 1, "مجموع الصفات الشخصية"), bold=True, color="FFFFFF", bg=ORANGE, ah="right")
     sc(ws.cell(r, 2, f"{per_total_weight:.1f}%"), bold=True, color="FFFFFF", bg=ORANGE, ah="center")
     per_pct_total = round(kpi_score_to_pct(per_total_score, per_total_weight), 1) if per_total_weight > 0 else 0
-    sc(ws.cell(r, 3, f"{per_pct_total}%"),       bold=True, color="FFFFFF", bg=ORANGE, ah="center")
+    sc(ws.cell(r, 3, f"{per_pct_total}%"), bold=True, color="FFFFFF", bg=ORANGE, ah="center")
     sc(ws.cell(r, 4, rating_label(per_pct_total)), bold=True, color="FFFFFF", bg=ORANGE, ah="center")
     r += 1
-    ws.row_dimensions[r].height = 3; r += 1
+    r += 1
 
-    # ══════════════════════════════════════════════════════════════════
     # ملاحظات المقيم
-    # ══════════════════════════════════════════════════════════════════
     ws.row_dimensions[r].height = 22
     mc(r, 1, r, 4, f"ملاحظات المقيم: {notes or ''}", bg=NOTE_BG, wrap=True)
     r += 1
@@ -305,66 +275,18 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
     # الاحتياجات التدريبية
     _train_vals = [v for v in m_train.values() if v and str(v).strip() not in ("", "nan", "None", "—")]
     _train = _train_vals[0] if _train_vals else (training if training else "")
-    mc(r, 1, r, 4,
-       f"الاحتياجات التدريبية: {_train}" if _train else "الاحتياجات التدريبية:",
-       bg=TRAIN_BG, wrap=True)
+    mc(r, 1, r, 4, f"الاحتياجات التدريبية: {_train}" if _train else "الاحتياجات التدريبية:", bg=TRAIN_BG, wrap=True)
     r += 1
-    ws.row_dimensions[r].height = 3; r += 1
+    r += 1
 
-    # ══════════════════════════════════════════════════════════════════
-    # الإجراءات التأديبية
-    # ══════════════════════════════════════════════════════════════════
-    if disciplinary_actions is not None and not disciplinary_actions.empty:
-        ws.row_dimensions[r].height = 18
-        mc(r, 1, r, 4, "⚠️ الإجراءات التأديبية المسجلة",
-           bold=True, color="FFFFFF", bg="B91C1C", ah="center")
-        r += 1
-        ws.row_dimensions[r].height = 14
-        for ci, hdr in enumerate(["التاريخ", "نوع الإنذار", "السبب", "خصم (أيام)"], 1):
-            sc(ws.cell(r, ci, hdr), bold=True, sz=8, color="FFFFFF", bg="7F1D1D", ah="center")
-        r += 1
-        for idx, (_, row_disc) in enumerate(disciplinary_actions.iterrows()):
-            ws.row_dimensions[r].height = 14
-            rbg = DISC_BG if idx % 2 == 0 else WHITE
-            sc(ws.cell(r, 1, str(row_disc.get("action_date",   ""))), bg=rbg, ah="center")
-            sc(ws.cell(r, 2, str(row_disc.get("warning_type",  ""))), bg=rbg, ah="center")
-            sc(ws.cell(r, 3, str(row_disc.get("reason",        ""))), bg=rbg, wrap=True)
-            sc(ws.cell(r, 4, str(row_disc.get("deduction_days", 0))), bg=rbg, ah="center")
-            r += 1
-        ws.row_dimensions[r].height = 3; r += 1
-
-    # ══════════════════════════════════════════════════════════════════
-    # الالتزام بالدوام
-    # ══════════════════════════════════════════════════════════════════
-    if attendance_data is not None and not attendance_data.empty:
-        ws.row_dimensions[r].height = 18
-        mc(r, 1, r, 4, "⏰ الالتزام بالدوام",
-           bold=True, color="FFFFFF", bg=DARK, ah="center")
-        r += 1
-        ws.row_dimensions[r].height = 14
-        sc(ws.cell(r, 1, "عدد مرات التأخير"),    bold=True, sz=8, color="FFFFFF", bg=MID, ah="center")
-        sc(ws.cell(r, 2, "إجمالي ساعات التأخير"), bold=True, sz=8, color="FFFFFF", bg=MID, ah="center")
-        r += 1
-        row_att = attendance_data.iloc[0]
-        ws.row_dimensions[r].height = 14
-        sc(ws.cell(r, 1, str(row_att.get("late_count", 0))),
-           bold=True, bg=ATT_BG, ah="center")
-        sc(ws.cell(r, 2, f"{float(row_att.get('total_late_hours', 0)):.2f}"),
-           bold=True, bg=ATT_BG, ah="center")
-        r += 1
-        ws.row_dimensions[r].height = 3; r += 1
-
-    # ══════════════════════════════════════════════════════════════════
     # التوقيع
-    # ══════════════════════════════════════════════════════════════════
     ws.row_dimensions[r].height = 18
     sc(ws.cell(r, 1, f"المسؤول المباشر: {manager}"), bold=True, ah="center")
-    sc(ws.cell(r, 2, "اسم الموظف"),                  bold=True, ah="center")
+    sc(ws.cell(r, 2, "اسم الموظف"), bold=True, ah="center")
     _ec = ws.cell(r, 3, emp_name)
     sc(_ec, bold=True, ah="right")
     _ec.border = Border(left=_med, right=_med, top=_med, bottom=_med)
     r += 1
-
     ws.row_dimensions[r].height = 18
     _t1 = ws.cell(r, 1, "التوقيع: _______________")
     sc(_t1, bold=True, bg=LGRAY, ah="center")
@@ -374,46 +296,42 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
     sc(_t2, bold=True, bg=LGRAY, ah="center")
     _t2.border = Border(left=_med, right=_med, top=_med, bottom=_med)
 
-    # ── إعداد الطباعة ──
-    ws.page_setup.orientation  = "landscape"
-    ws.page_setup.paperSize    = 9
-    ws.page_setup.fitToPage    = True
-    ws.page_setup.fitToWidth   = 1
-    ws.page_setup.fitToHeight  = 1
+    # إعداد الطباعة
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.paperSize = 9
+    ws.page_setup.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_margins = PageMargins(left=0.5, right=0.5, top=0.5, bottom=0.5)
     ws.print_options.horizontalCentered = True
-    ws.print_options.verticalCentered   = True
+    ws.print_options.verticalCentered = True
+
     return ws
 
 
-# ══════════════════════════════════════════════════════════════════════
-# شيت الملخص
-# ══════════════════════════════════════════════════════════════════════
 def build_summary_sheet(wb, rows, title="ملخص التقييم", year=None, chart_img=None):
     ws = wb.create_sheet(title[:28])
-    ws.sheet_view.rightToLeft  = True
+    ws.sheet_view.rightToLeft = True
     ws.sheet_view.showGridLines = False
 
-    DARK     = "1F3864"
-    LGRAY    = "F2F2F2"
-    WHITE    = "FFFFFF"
-    YELLOW   = "FFF2CC"
+    DARK = "1F3864"
+    LGRAY = "F2F2F2"
+    WHITE = "FFFFFF"
+    YELLOW = "FFF2CC"
     GREEN_BG = "E2EFDA"
-    RED_BG   = "FFDAD9"
+    RED_BG = "FFDAD9"
 
     for col, w in [("A", 4), ("B", 32), ("C", 14), ("D", 8), ("E", 10), ("F", 13), ("G", 13)]:
         ws.column_dimensions[col].width = w
 
     ws.row_dimensions[1].height = 36
 
-    def _sc(cell, val=None, bold=False, sz=9, color="000000", bg=None,
-            ah="right", av="center", brd="inner"):
-        if val is not None:
-            cell.value = val
-        cell.font      = Font(name="Arial", bold=bold, size=sz, color=color)
+    def _sc(cell, val=None, bold=False, sz=9, color="000000", bg=None, ah="right", av="center", brd="inner"):
+        if val is not None: cell.value = val
+        cell.font = Font(name="Arial", bold=bold, size=sz, color=color)
         cell.alignment = Alignment(horizontal=ah, vertical=av, readingOrder=2)
-        if bg:
-            cell.fill = PatternFill("solid", fgColor=bg)
+        if bg: cell.fill = PatternFill("solid", fgColor=bg)
         if brd == "outer":
             cell.border = OUTER_B
         else:
@@ -423,17 +341,16 @@ def build_summary_sheet(wb, rows, title="ملخص التقييم", year=None, ch
         ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
         _sc(ws.cell(r1, c1, val), **kw)
 
-    _mc(1, 1, 1, 7, title, bold=True, sz=12, color="FFFFFF", bg=DARK,
-        ah="center", av="center", brd="outer")
+    _mc(1, 1, 1, 7, title, bold=True, sz=12, color="FFFFFF", bg=DARK, ah="center", av="center", brd="outer")
 
     import os as _os2
     from openpyxl.drawing.image import Image as XLImg2
     _logo2 = globals().get("LOGO_PATH", "logo.png")
     if _logo2 and _os2.path.exists(_logo2):
         try:
-            _img        = XLImg2(_logo2)
+            _img = XLImg2(_logo2)
             _img.height = 32
-            _img.width  = 26
+            _img.width = 26
             _img.anchor = "G1"
             ws.add_image(_img)
         except:
@@ -441,22 +358,21 @@ def build_summary_sheet(wb, rows, title="ملخص التقييم", year=None, ch
 
     ws.row_dimensions[2].height = 4
     ws.row_dimensions[3].height = 16
-    for c, t in [(1, "#"), (2, "اسم الموظف"), (3, "القسم"), (4, "السنة"),
-                 (5, "الأشهر"), (6, "المعدل %"), (7, "التقييم")]:
+    for c, t in [(1, "#"), (2, "اسم الموظف"), (3, "القسم"), (4, "السنة"), (5, "الأشهر"), (6, "المعدل %"), (7, "التقييم")]:
         _sc(ws.cell(3, c, t), bold=True, sz=9, color="FFFFFF", bg=DARK, ah="center", brd="outer")
 
     for i, (name, dept, months, pct_val, verb) in enumerate(rows, 4):
         ws.row_dimensions[i].height = 16
-        rbg   = LGRAY if i % 2 == 0 else WHITE
-        sc_c  = "375623" if pct_val >= 80 else ("C00000" if pct_val < 60 else "000000")
-        vbg   = GREEN_BG if pct_val >= 80 else (YELLOW if pct_val >= 70 else (RED_BG if pct_val < 60 else LGRAY))
-        _sc(ws.cell(i, 1, i - 3),            sz=8,  ah="center", bg=rbg,  brd="inner")
-        _sc(ws.cell(i, 2, name),              sz=9,  ah="right",  bg=rbg,  brd="inner")
-        _sc(ws.cell(i, 3, dept),              sz=8,  ah="center", bg=rbg,  brd="inner")
-        _sc(ws.cell(i, 4, year or ""),        sz=9,  ah="center", bg=rbg,  brd="inner")
-        _sc(ws.cell(i, 5, months),            sz=9,  ah="center", bg=rbg,  brd="inner")
+        rbg = LGRAY if i % 2 == 0 else WHITE
+        sc_c = "375623" if pct_val >= 80 else ("C00000" if pct_val < 60 else "000000")
+        vbg = GREEN_BG if pct_val >= 80 else (YELLOW if pct_val >= 70 else (RED_BG if pct_val < 60 else LGRAY))
+        _sc(ws.cell(i, 1, i - 3), sz=8, ah="center", bg=rbg, brd="inner")
+        _sc(ws.cell(i, 2, name), sz=9, ah="right", bg=rbg, brd="inner")
+        _sc(ws.cell(i, 3, dept), sz=8, ah="center", bg=rbg, brd="inner")
+        _sc(ws.cell(i, 4, year or ""), sz=9, ah="center", bg=rbg, brd="inner")
+        _sc(ws.cell(i, 5, months), sz=9, ah="center", bg=rbg, brd="inner")
         _sc(ws.cell(i, 6, f"{pct_val:.1f}%"), sz=10, bold=True, color=sc_c, ah="center", bg=vbg, brd="inner")
-        _sc(ws.cell(i, 7, verb),              sz=9,  bold=True, color=sc_c, ah="center", bg=vbg, brd="inner")
+        _sc(ws.cell(i, 7, verb), sz=9, bold=True, color=sc_c, ah="center", bg=vbg, brd="inner")
 
     last = 3 + len(rows)
     for r in range(3, last + 1):
@@ -469,12 +385,13 @@ def build_summary_sheet(wb, rows, title="ملخص التقييم", year=None, ch
         ws.cell(last, c).border = Border(left=b.left, right=b.right, top=b.top, bottom=thick_s)
 
     ws.page_setup.orientation = "landscape"
-    ws.page_setup.paperSize   = 9
-    ws.page_setup.fitToPage   = True
-    ws.page_setup.fitToWidth  = 1
+    ws.page_setup.paperSize = 9
+    ws.page_setup.fitToPage = True
+    ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 1
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_margins = PageMargins(left=0.5, right=0.5, top=0.5, bottom=0.5)
     ws.print_options.horizontalCentered = True
-    ws.print_options.verticalCentered   = True
+    ws.print_options.verticalCentered = True
+
     return ws
