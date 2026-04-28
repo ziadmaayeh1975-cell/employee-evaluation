@@ -94,21 +94,22 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
     ws.column_dimensions["B"].width = 25
     ws.column_dimensions["C"].width = 18
     ws.column_dimensions["D"].width = 15
-    ws.column_dimensions["E"].width = 3   # فاصل
-    ws.column_dimensions["F"].width = 12  # الشهر
-    ws.column_dimensions["G"].width = 12  # الدرجة
-    ws.column_dimensions["H"].width = 12  # التقييم اللفظي
-    ws.column_dimensions["I"].width = 15  # تاريخ التقييم
-    ws.column_dimensions["J"].width = 25  # ملاحظات المقيم
-    ws.column_dimensions["K"].width = 15  # الإجراءات التأديبية
-    ws.column_dimensions["L"].width = 15  # عدد مرات التأخير
-    ws.column_dimensions["M"].width = 5
+    ws.column_dimensions["E"].width = 3
+    ws.column_dimensions["F"].width = 3   # فاصل فارغ بين D و G
+    ws.column_dimensions["G"].width = 12  # الشهر (يبدأ من هنا)
+    ws.column_dimensions["H"].width = 12  # الدرجة
+    ws.column_dimensions["I"].width = 12  # التقييم اللفظي
+    ws.column_dimensions["J"].width = 15  # تاريخ التقييم
+    ws.column_dimensions["K"].width = 25  # ملاحظات المقيم
+    ws.column_dimensions["L"].width = 15  # الإجراءات التأديبية
+    ws.column_dimensions["M"].width = 15  # عدد مرات التأخير
+    ws.column_dimensions["N"].width = 5
 
     r = 1
 
     # ======================== الترويسة ========================
     ws.row_dimensions[1].height = 32
-    mc(1, 1, 1, 12, _header, bold=True, sz=12, color="FFFFFF", bg=DARK, ah="center")
+    mc(1, 1, 1, 14, _header, bold=True, sz=12, color="FFFFFF", bg=DARK, ah="center")
     
     _logo = globals().get("LOGO_PATH", "logo.png")
     if os.path.exists(_logo):
@@ -145,13 +146,18 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
     sc(ws.cell(r, 2, f"{int(round(pct))}% — {verb}"), bold=True, sz=11, color=sc_c, bg=sbg, ah="center")
     r += 2
 
-    # ======================== جدول "نتيجة التقييم الشهري" (أعمدة F إلى L) ========================
+    # ======================== جدول "نتيجة التقييم الشهري" ========================
+    # عنوان الجدول يبدأ من الصف G4 (العمود G, الصف r الحالي = 4 تقريباً)
+    # نحرص أن يكون أول صف للجدول هو الصف r الحالي
+    
+    # عنوان الجدول من G إلى M
     ws.row_dimensions[r].height = 20
-    mc(r, 6, r, 12, "نتيجة التقييم الشهري", bold=True, sz=11, color="FFFFFF", bg=DARK, ah="center")
+    mc(r, 7, r, 13, "نتيجة التقييم الشهري", bold=True, sz=11, color="FFFFFF", bg=DARK, ah="center")
     r += 1
 
+    # رأس الجدول من G إلى M (الصف التالي للعنوان)
     headers = ["الشهر", "الدرجة (%)", "التقييم اللفظي", "تاريخ التقييم", "ملاحظات المقيم", "الإجراءات", "عدد مرات التأخير"]
-    for col_idx, header in enumerate(headers, 6):
+    for col_idx, header in enumerate(headers, 7):  # 7 = عمود G
         sc(ws.cell(r, col_idx, header), bold=True, sz=9, color="FFFFFF", bg=MID, ah="center")
     r += 1
 
@@ -185,7 +191,7 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
             if month_num:
                 att_by_month[month_num] = attendance_data.get("late_count", 0)
 
-    # ======================== عرض بيانات الأشهر ========================
+    # عرض بيانات الأشهر (12 شهرًا)
     for month_idx, month_name in enumerate(MONTHS_LIST, 1):
         ws.row_dimensions[r].height = 16
         rbg = LGRAY if month_idx % 2 == 0 else WHITE
@@ -211,21 +217,21 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis, mon
             eval_date = "—"
             note = "—"
 
-        sc(ws.cell(r, 6, month_name), bg=rbg, ah="center")
-        sc(ws.cell(r, 7, score_pct), bg=rbg, ah="center")
-        sc(ws.cell(r, 8, verbal_val), bg=rbg, ah="center")
-        sc(ws.cell(r, 9, eval_date), bg=rbg, ah="center")
-        sc(ws.cell(r, 10, note), bg=rbg, ah="right", wrap=True)
+        sc(ws.cell(r, 7, month_name), bg=rbg, ah="center")
+        sc(ws.cell(r, 8, score_pct), bg=rbg, ah="center")
+        sc(ws.cell(r, 9, verbal_val), bg=rbg, ah="center")
+        sc(ws.cell(r, 10, eval_date), bg=rbg, ah="center")
+        sc(ws.cell(r, 11, note), bg=rbg, ah="right", wrap=True)
 
         # الإجراءات التأديبية
         disc_text = "—"
         if month_idx in disc_by_month:
             disc_text = "، ".join(set(disc_by_month[month_idx]))
-        sc(ws.cell(r, 11, disc_text), bg=rbg, ah="center")
+        sc(ws.cell(r, 12, disc_text), bg=rbg, ah="center")
 
         # عدد مرات التأخير
         late_count = att_by_month.get(month_idx, 0)
-        sc(ws.cell(r, 12, str(late_count) if late_count > 0 else "—"), bg=rbg, ah="center")
+        sc(ws.cell(r, 13, str(late_count) if late_count > 0 else "—"), bg=rbg, ah="center")
 
         r += 1
 
