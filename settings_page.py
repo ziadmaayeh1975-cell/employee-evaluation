@@ -71,7 +71,7 @@ def render_settings(df_emp, df_kpi, df_data):
     TRIAL_DATA = load_trial_users()
     APP_CFG    = load_app_settings()
 
-    # بناء قائمة التبويبات (بدون ملفات الموظفين CV)
+    # بناء قائمة التبويبات
     _tabs = ["👥 إدارة المستخدمين", "⏳ المستخدمون التجريبيون",
              "🏢 إعدادات الشركة", "👨‍💼 إدارة الموظفين",
              "📊 قائمة مؤشرات الأداء"]
@@ -93,7 +93,6 @@ def render_settings(df_emp, df_kpi, df_data):
     set_tab4      = _tab_objs[3]
     set_tab_kpi   = _tab_objs[4]
     
-    # التبويبات الإضافية
     attendance_tab_index = 5
     disc_tab_index = 6 if _ATTENDANCE_OK else 5
     db_tab_index   = disc_tab_index + 1 if _DISCIPLINARY_OK else disc_tab_index
@@ -656,4 +655,26 @@ def render_settings(df_emp, df_kpi, df_data):
                         record_options = {f"{r.get('employee_name', '')} - {r.get('date', '')} - {r.get('late_hours', 0)} ساعة": r.get("id") 
                                          for r in all_records}
                         selected = st.selectbox("اختر السجل", list(record_options.keys()), key="att_del_sel")
-                        if
+                        if st.button("🗑️ حذف", type="primary", key="att_del_btn"):
+                            record_id = record_options[selected]
+                            delete_attendance_record(record_id)
+                            st.success("✅ تم حذف السجل")
+                            st.rerun()
+                    else:
+                        st.info("لا توجد سجلات للحذف")
+            
+            st.markdown("---")
+            
+            with st.expander("⚠️ تنظيف كامل (استخدام بحذر)"):
+                st.warning("⚠️ تحذير: هذا الإجراء يمسح **جميع** سجلات الالتزام بالدوام نهائياً")
+                if st.button("🗑️ حذف جميع السجلات", type="secondary", key="att_clear_all_btn"):
+                    clear_all_attendance()
+                    st.success("✅ تم حذف جميع السجلات")
+                    st.rerun()
+
+    # ══════════════════════════════════════════════════════════════════
+    # قاعدة البيانات
+    # ══════════════════════════════════════════════════════════════════
+    if _DB_PANEL_OK and set_tab6:
+        with set_tab6:
+            render_db_panel()
