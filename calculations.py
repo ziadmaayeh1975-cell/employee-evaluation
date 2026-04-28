@@ -80,13 +80,42 @@ def calc_yearly_personal(df_data, emp, year=None):
     return sum(active)/len(active) if active else 0.0
 
 def get_kpi_avgs(df_data, df_kpi, emp, job, months_filter=None, year=None):
+    """
+    ترجع قائمة من dicts تحتوي على:
+      - KPI_Name  : اسم المؤشر
+      - Weight    : الوزن النسبي
+      - avg_score : متوسط الدرجة للأشهر المحددة
+    """
     result = []
-    for _, row in df_kpi[df_kpi["JobTitle"]==job].iterrows():
-        kname  = row["KPI_Name"]
-        weight = float(row["Weight"])
-        sub    = df_data[(df_data["EmployeeName"]==emp) & (df_data["KPI_Name"]==kname)]
-        if months_filter: sub = sub[sub["Month"].isin(months_filter)]
-        if year: sub = sub[sub["Year"] == int(year)]
-        avg = sub["KPI_%"].mean() if not sub.empty else 0.0
-        result.append((kname, weight, round(avg, 1)))
+    job_kpis = df_kpi[df_kpi["JobTitle"] == job]
+
+    for _, row in job_kpis.iterrows():
+        kname  = row.get("KPI_Name")
+        weight = row.get("Weight", 0)
+
+        # تجاهل أي صف ناقص
+        if not kname or str(kname).strip() in ("", "nan", "None"):
+            continue
+
+        weight = float(weight)
+
+        # تصفية بيانات الموظف لهذا المؤشر
+        sub = df_data[
+            (df_data["EmployeeName"] == emp) &
+            (df_data["KPI_Name"] == kname)
+        ]
+        if months_filter:
+            sub = sub[sub["Month"].isin(months_filter)]
+        if year:
+            sub = sub[sub["Year"] == int(year)]
+
+        # avg_score = متوسط KPI_% (نسبة مئوية 0-100 تمثل الدرجة من الوزن)
+        avg_score = round(sub["KPI_%"].mean(), 1) if not sub.empty else 0.0
+
+        result.append({
+            "KPI_Name":  kname,
+            "Weight":    weight,
+            "avg_score": avg_score,
+        })
+
     return result
