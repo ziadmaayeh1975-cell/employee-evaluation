@@ -119,33 +119,52 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis,
 
     # ── disciplinary / attendance lookup ─────────────────────────────────────
     disc_by_month = {}
+    disc_list = []  # for full disciplinary table (separate section)
     if disciplinary_actions is not None and not getattr(disciplinary_actions,"empty",True):
         for _, row_d in disciplinary_actions.iterrows():
             dd = row_d.get("action_date","")
+            action_type = row_d.get("warning_type","")
+            deduction = row_d.get("deduction_days",0)
             if dd:
                 try:
                     mn = int(str(dd).split("-")[1])
-                    disc_by_month.setdefault(mn, []).append(row_d.get("warning_type",""))
+                    disc_by_month.setdefault(mn, []).append(action_type)
+                    disc_list.append({
+                        "date": dd,
+                        "type": action_type,
+                        "reason": row_d.get("reason",""),
+                        "deduction": deduction
+                    })
                 except: pass
 
     att_by_month = {}
+    total_late_count = 0
+    total_late_hours = 0.0
     if attendance_data is not None:
         if hasattr(attendance_data,"iterrows"):
             for _, row_a in attendance_data.iterrows():
                 mn = row_a.get("month")
-                if mn: att_by_month[mn] = row_a.get("late_count",0)
+                late_count = row_a.get("late_count",0)
+                late_hours = row_a.get("late_hours",0)
+                if mn:
+                    att_by_month[mn] = late_count
+                    total_late_count += late_count
+                    total_late_hours += late_hours
         elif isinstance(attendance_data, dict):
             mn = attendance_data.get("month")
-            if mn: att_by_month[mn] = attendance_data.get("late_count",0)
+            if mn:
+                att_by_month[mn] = attendance_data.get("late_count",0)
+                total_late_count = attendance_data.get("late_count",0)
+                total_late_hours = attendance_data.get("late_hours",0)
 
     # ════════════════════════════════════════════════════════════════════════
     # COLUMN WIDTHS
-    # Left block  A-D  (employee info + KPIs)
-    # Divider     E-F  (narrow spacers)
+    # Left block  A-E  (employee info + KPIs)
+    # Divider     F
     # Right block G-N  (monthly table)
     # ════════════════════════════════════════════════════════════════════════
-    col_w = {"A":5,"B":26,"C":16,"D":14,
-             "E":3,"F":2,
+    col_w = {"A":5,"B":26,"C":16,"D":14,"E":3,
+             "F":2,
              "G":10,"H":10,"I":14,"J":15,"K":24,"L":14,"M":14,"N":5}
     for col, w in col_w.items():
         ws.column_dimensions[col].width = w
@@ -167,7 +186,7 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis,
     except: pass
 
     # ════════════════════════════════════════════════════════════════════════
-    # ROWS 2-8 – employee info (columns A-D)  +  monthly table header (G-N)
+    # ROWS 2-8 – employee info (columns A-E)  +  monthly table header (G-N)
     # ════════════════════════════════════════════════════════════════════════
     INFO = [
         ("اسم الموظف",   emp_name),
@@ -191,15 +210,17 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis,
     for ci, h in enumerate(mth_headers, 7):
         sc(ws.cell(3, ci, h), bold=True, sz=8, color="FFFFFF", bg=MID, ah="center")
 
-    # Employee info rows 2-8
+    # Employee info rows 2-8 (use columns A-E, skip D for spacing)
     for i, (lbl, val) in enumerate(INFO):
         row = 2 + i
         ws.row_dimensions[row].height = 16
         sc(ws.cell(row, 1, lbl),  bold=True, color="FFFFFF", bg=DARK, ah="center")
         sc(ws.cell(row, 2, val),  color="000000", bg=INFO_BG, ah="right")
+        # Clear column D (spacer) if needed
+        sc(ws.cell(row, 4, ""), bg=WHITE)
 
     # ════════════════════════════════════════════════════════════════════════
-    # ROW 9 – annual result (left A-D) + first month data (right G-N)
+    # ROW 9 – annual result (left A-E) + first month data (right G-N)
     # ════════════════════════════════════════════════════════════════════════
     ws.row_dimensions[9].height = 18
     mc(9,1,9,2, "نتيجة التقييم السنوي", bold=True, color="FFFFFF", bg=ORANGE, ah="center")
@@ -208,7 +229,6 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis,
 
     # ════════════════════════════════════════════════════════════════════════
     # ROWS 4-15  monthly rows (right side G-N) start from row 4
-    # We write month rows starting at row 4 (row 3 = header, row 2 = title)
     # ════════════════════════════════════════════════════════════════════════
     mth_start_row = 4
     for month_idx, month_name in enumerate(MONTHS_LIST, 1):
@@ -246,7 +266,6 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis,
         sc(ws.cell(mr, 12, disc_text),   bg=rbg, ah="center")
         sc(ws.cell(mr, 13, late_txt),    bg=rbg, ah="center")
 
-    # after 12 months: row 16 is free on right side
     # ════════════════════════════════════════════════════════════════════════
     # KPI TABLES (left side, starting row 10)
     # ════════════════════════════════════════════════════════════════════════
@@ -322,6 +341,64 @@ def build_employee_sheet(wb, emp_name, job_title, dept, manager, year, kpis,
                     if per_total_weight>0 else 0
     sc(ws.cell(r,3,f"{per_pct_total}%"),  bold=True, color="FFFFFF", bg=ORANGE, ah="center")
     sc(ws.cell(r,4,rating_label(per_pct_total)), bold=True, color="FFFFFF", bg=ORANGE, ah="center")
+    r += 2
+
+    # ════════════════════════════════════════════════════════════════════════
+    # NEW SECTION: الإجراءات التأديبية المسجلة (Disciplinary Actions Table)
+    # ════════════════════════════════════════════════════════════════════════
+    if disc_list:
+        ws.row_dimensions[r].height = 16
+        mc(r,1,r,4, "الإجراءات التأديبية المسجلة",
+           bold=True, color="FFFFFF", bg=DARK, ah="center")
+        r += 1
+        
+        ws.row_dimensions[r].height = 15
+        sc(ws.cell(r,1,"التاريخ"),    bold=True, color="FFFFFF", bg=MID, ah="center")
+        sc(ws.cell(r,2,"نوع الإجراء"), bold=True, color="FFFFFF", bg=MID, ah="center")
+        sc(ws.cell(r,3,"السبب"),      bold=True, color="FFFFFF", bg=MID, ah="center")
+        sc(ws.cell(r,4,"خصم (أيام)"), bold=True, color="FFFFFF", bg=MID, ah="center")
+        r += 1
+        
+        for i, act in enumerate(disc_list):
+            rbg = LGRAY if i % 2 == 0 else WHITE
+            ws.row_dimensions[r].height = 15
+            sc(ws.cell(r,1,act["date"]),   bg=rbg, ah="center", sz=8)
+            sc(ws.cell(r,2,act["type"]),   bg=rbg, ah="center", sz=8)
+            sc(ws.cell(r,3,act["reason"]), bg=rbg, ah="right", wrap=True, sz=8)
+            sc(ws.cell(r,4,act["deduction"]), bg=rbg, ah="center", sz=8)
+            r += 1
+        r += 1
+    else:
+        # Show empty table or skip
+        ws.row_dimensions[r].height = 16
+        mc(r,1,r,4, "الإجراءات التأديبية المسجلة",
+           bold=True, color="FFFFFF", bg=DARK, ah="center")
+        r += 1
+        ws.row_dimensions[r].height = 15
+        sc(ws.cell(r,1,"لا توجد إجراءات تأديبية مسجلة"), bold=False, bg=LGRAY, ah="center")
+        sc(ws.cell(r,2,""), sc(ws.cell(r,3,"")), sc(ws.cell(r,4,"")))
+        r += 2
+
+    # ════════════════════════════════════════════════════════════════════════
+    # NEW SECTION: الالتزام بالدوام (Attendance Summary)
+    # ════════════════════════════════════════════════════════════════════════
+    ws.row_dimensions[r].height = 16
+    mc(r,1,r,4, "الالتزام بالدوام",
+       bold=True, color="FFFFFF", bg=DARK, ah="center")
+    r += 1
+    
+    ws.row_dimensions[r].height = 15
+    sc(ws.cell(r,1,"عدد مرات التأخير"), bold=True, color="FFFFFF", bg=MID, ah="center")
+    sc(ws.cell(r,2,"إجمالي ساعات التأخير"), bold=True, color="FFFFFF", bg=MID, ah="center")
+    sc(ws.cell(r,3,"ملاحظات"), bold=True, color="FFFFFF", bg=MID, ah="center")
+    sc(ws.cell(r,4,""), bold=True, color="FFFFFF", bg=MID, ah="center")
+    r += 1
+    
+    ws.row_dimensions[r].height = 15
+    sc(ws.cell(r,1,str(total_late_count) if total_late_count > 0 else "0"), bg=LGRAY, ah="center", bold=True)
+    sc(ws.cell(r,2,f"{total_late_hours:.2f}" if total_late_hours > 0 else "0"), bg=LGRAY, ah="center", bold=True)
+    sc(ws.cell(r,3,""), bg=LGRAY, ah="right")
+    sc(ws.cell(r,4,""), bg=LGRAY)
     r += 2
 
     # ── Notes / Training ──
@@ -416,6 +493,18 @@ if __name__ == "__main__":
         ("بكر هشام سعيد حرب","Dec",0),
     ]
 
+    # Sample disciplinary actions data (as DataFrame or list)
+    import pandas as pd
+    disciplinary_df = pd.DataFrame([
+        {"action_date": "2026-04-07", "warning_type": "إداري أول", 
+         "reason": "عدم التقييد بالتعليمات المعقدة", "deduction_days": 0}
+    ])
+    
+    # Sample attendance data
+    attendance_df = pd.DataFrame([
+        {"month": 4, "late_count": 1, "late_hours": 0.35}
+    ])
+
     build_employee_sheet(
         wb,
         emp_name        ="بكر هشام سعيد حرب",
@@ -428,8 +517,8 @@ if __name__ == "__main__":
         notes           ="",
         training        ="",
         employee_id     ="397",
-        disciplinary_actions=None,
-        attendance_data =None,
+        disciplinary_actions=disciplinary_df,
+        attendance_data=attendance_df,
     )
 
     out = "/mnt/user-data/outputs/employee_report_fixed.xlsx"
