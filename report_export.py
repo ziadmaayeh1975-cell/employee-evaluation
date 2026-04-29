@@ -764,7 +764,7 @@ td {
             colgroup += f'<col style="width:{col_widths.get(c, 50)}px;">'
         colgroup += "</colgroup>"
 
-        parts.append(f'<div class="page">{logo_tag}</table>{colgroup}')
+        parts.append(f'<div class="page">{logo_tag}<tr>{colgroup}')
 
         for r in range(1, ws.max_row + 1):
             rh_raw = ws.row_dimensions[r].height if r in ws.row_dimensions else 13
@@ -825,7 +825,7 @@ td {
 
                 parts.append(f'<td style="{style}"{span}>{text}</table>')
 
-            parts.append("<table>")
+            parts.append("</table>")
 
         chart_section = ""
         if chart_b64:
@@ -836,7 +836,7 @@ td {
                 'border:1px solid #E2E8F0;border-radius:4px;" />'
                 "</div>"
             )
-        parts.append(f"<table>{chart_section}</div>")
+        parts.append(f"</table>{chart_section}</div>")
 
     parts.append("</body></html>")
     return "".join(parts)
