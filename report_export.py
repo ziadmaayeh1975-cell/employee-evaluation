@@ -190,10 +190,9 @@ def build_employee_sheet(
     ws.sheet_view.showGridLines = False
 
     # ── عرض الأعمدة ─────────────────────────────────────────────
-    # A    : عمود المؤشرات — سيُطبَّق عليه auto-fit لاحقاً بعد كتابة البيانات
-    # B-D  : بلوك اليسار (معلومات + KPIs)
+    # A-D  : بلوك اليسار (معلومات + KPIs)
     # E-F  : فاصل ضيق
-    # G-N  : بلوك اليمين (جدول شهري) — سيُطبَّق auto-fit على كل عمود
+    # G-N  : بلوك اليمين (جدول شهري)
     col_cfg = {
         "A": 5,  "B": 26, "C": 16, "D": 13,
         "E": 2,  "F": 2,
@@ -202,17 +201,6 @@ def build_employee_sheet(
     }
     for col, w in col_cfg.items():
         ws.column_dimensions[col].width = w
-
-    # دالة مساعدة لحساب عرض النص بوحدات Excel (تقريبية)
-    def _text_width(text, bold=False, sz=9):
-        if not text:
-            return 0
-        char_w = sz * (0.145 if bold else 0.13)
-        arabic_boost = 1.4  # الحروف العربية أعرض
-        return len(str(text)) * char_w * arabic_boost + 2
-
-    # نتتبع أقصى عرض مطلوب لكل عمود من أعمدة الجدول الشهري وعمود A
-    _col_max = {c: 0.0 for c in list("AGHIJKLM")}
 
     # ── pre-process ──────────────────────────────────────────────
     m_train = {}
@@ -235,7 +223,67 @@ def build_employee_sheet(
     disc_map = _disc_by_month(disciplinary_actions)
     att_map  = _att_by_month(attendance_data)
 
+    # ════════════════════════════════════════════════════════════
+    # ROW 1 — ترويسة كاملة
+    # ════════════════════════════════════════════════════════════
+    ws.row_dimensions[1].height = 28
+    _mc(ws, 1, 1, 1, 14, _company_header(),
+        bold=True, sz=11, color="FFFFFF", bg=DARK, ah="center")
+    _add_logo(ws, anchor="N1", h=55, w=44)
 
+    # ════════════════════════════════════════════════════════════
+    # ROWS 2-8 — معلومات الموظف (A-D)  +  عنوان ورؤوس الجدول (G-N)
+    # ════════════════════════════════════════════════════════════
+    INFO = [
+        ("اسم الموظف",    emp_name),
+        ("رقم الموظف",    employee_id),
+        ("الوظيفة",       job_title),
+        ("القسم",         dept),
+        ("السنة",         str(year)),
+        ("اسم المقيم",    manager),
+        ("تاريخ التقييم", date.today().strftime("%d/%m/%Y")),
+    ]
+    for i, (lbl, val) in enumerate(INFO):
+        rr = 2 + i
+        ws.row_dimensions[rr].height = 16
+        _sc(ws.cell(rr, 1, lbl), bold=True, color="FFFFFF", bg=DARK, ah="center", brd=_TN)
+        ws.merge_cells(start_row=rr, start_column=2, end_row=rr, end_column=4)
+        _sc(ws.cell(rr, 2, val), color="000000", bg=_INFO_BG, ah="right", brd=_TN)
+
+    # عنوان الجدول الشهري — يمتد صفين (2-3) على G-N
+    ws.row_dimensions[2].height = 16
+    _mc(ws, 2, 7, 3, 13, "نتيجة التقييم الشهري",
+        bold=True, sz=10, color="FFFFFF", bg=DARK, ah="center")
+    ws.row_dimensions[3].height = 15
+
+    # ════════════════════════════════════════════════════════════
+    # ROW 9 — نتيجة التقييم السنوي (A-D)
+    # ════════════════════════════════════════════════════════════
+    ws.row_dimensions[9].height = 17
+    _mc(ws, 9, 1, 9, 2, "نتيجة التقييم السنوي",
+        bold=True, color="FFFFFF", bg=ORANGE, ah="center", brd=_TN)
+    _mc(ws, 9, 3, 9, 4, f"{int(round(pct))}% — {verb}",
+        bold=True, sz=10, color=sc_c, bg=sbg, ah="center", brd=_TN)
+
+    # ════════════════════════════════════════════════════════════
+    # ROW 4 — رؤوس أعمدة الجدول الشهري (G-N)
+    # ════════════════════════════════════════════════════════════
+    ws.row_dimensions[4].height = 15
+    mth_hdrs = [
+        "الشهر", "الدرجة (%)", "التقييم",
+        "تاريخ التقييم", "ملاحظات المقيم",
+        "الإجراءات التأديبية", "مرات التأخير",
+    ]
+    for ci, h in enumerate(mth_hdrs, 7):
+        _sc(ws.cell(4, ci, h), bold=True, sz=8, color="FFFFFF", bg=MID,
+            ah="center", brd=_TN)
+
+    # ════════════════════════════════════════════════════════════
+    # ROWS 5-16 — بيانات الأشهر الـ12 (G-N)
+    # ════════════════════════════════════════════════════════════
+    for month_idx, month_name in enumerate(_MONTHS_LIST, 1):
+        mr  = 4 + month_idx   # rows 5-16
+        ws.row_dimensions[mr].height = 15
         rbg = LGRAY if month_idx % 2 == 0 else WHITE
 
         month_data = None
