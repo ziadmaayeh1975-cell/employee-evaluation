@@ -95,7 +95,8 @@ def _company_header():
             + (f" — {_branch}" if _branch else ""))
 
 
-def _add_logo(ws, anchor="A1", h=60, w=48):
+def _add_logo(ws, anchor="A1", h=45, w=36):
+    """إضافة الشعار في الجهة اليمنى (العمود الأخير)"""
     for _lp in [LOGO_PATH, "logo.png"]:
         if os.path.exists(_lp):
             try:
@@ -106,6 +107,24 @@ def _add_logo(ws, anchor="A1", h=60, w=48):
             except Exception:
                 pass
             break
+
+
+def _auto_fit_column_a(ws, start_row=1, end_row=None):
+    """
+    ضبط عرض العمود A تلقائياً بناءً على أطول محتوى في الصفوف.
+    """
+    max_len = 0
+    if end_row is None:
+        end_row = ws.max_row
+    for row in range(start_row, end_row + 1):
+        cell = ws.cell(row, 1)
+        if cell.value:
+            try:
+                max_len = max(max_len, len(str(cell.value)))
+            except:
+                pass
+    # عرض مناسب (كل حرف عربي ≈ 0.7 وحدة عرض في Excel)
+    ws.column_dimensions["A"].width = min(max(max_len * 0.7 + 2, 8), 50)
 
 
 def _disc_by_month(disciplinary_actions):
@@ -166,22 +185,6 @@ def build_employee_sheet(
     employee_id="",
     attendance_data=None,
 ):
-    """
-    التخطيط (Landscape A4 — صفحة واحدة مضمونة):
-    ┌──────────────────────────────────────────────────────────────┐
-    │  R1  : ترويسة كاملة A-N                                      │
-    ├───────────────────┬──────────────────────────────────────────┤
-    │  R2-8 : معلومات   │  R2: عنوان جدول الشهري  (G-N)           │
-    │  الموظف (A-D)     │  R3: رؤوس أعمدة الجدول                   │
-    │  R9: نتيجة سنوية  │  R4-15: 12 شهراً                         │
-    ├───────────────────┤  R16-17: مجموع شهري + مرات التأخير       │
-    │  R10+: KPIs       ├──────────────────────────────────────────┤
-    │  الوظيفي          │  (فارغ — يتوافق مع ارتفاع KPIs)          │
-    │  ثم الشخصي        │                                           │
-    │  ثم ملاحظات       │                                           │
-    │  ثم توقيع         │                                           │
-    └───────────────────┴──────────────────────────────────────────┘
-    """
     safe = emp_name[:28]
     if safe in [s.title for s in wb.worksheets]:
         safe = safe[:25] + "_2"
@@ -190,14 +193,11 @@ def build_employee_sheet(
     ws.sheet_view.showGridLines = False
 
     # ── عرض الأعمدة ─────────────────────────────────────────────
-    # A-D  : بلوك اليسار (معلومات + KPIs)
-    # E-F  : فاصل ضيق
-    # G-N  : بلوك اليمين (جدول شهري)
     col_cfg = {
         "A": 5,  "B": 26, "C": 16, "D": 13,
         "E": 2,  "F": 2,
         "G": 10, "H": 11, "I": 14, "J": 14,
-        "K": 22, "L": 14, "M": 14, "N": 4,
+        "K": 22, "L": 14, "M": 14, "N": 5,
     }
     for col, w in col_cfg.items():
         ws.column_dimensions[col].width = w
@@ -224,12 +224,13 @@ def build_employee_sheet(
     att_map  = _att_by_month(attendance_data)
 
     # ════════════════════════════════════════════════════════════
-    # ROW 1 — ترويسة كاملة
+    # ROW 1 — ترويسة كاملة (الشعار في اليمين)
     # ════════════════════════════════════════════════════════════
-    ws.row_dimensions[1].height = 28
-    _mc(ws, 1, 1, 1, 14, _company_header(),
+    ws.row_dimensions[1].height = 32
+    _mc(ws, 1, 1, 1, 13, _company_header(),
         bold=True, sz=11, color="FFFFFF", bg=DARK, ah="center")
-    _add_logo(ws, anchor="N1", h=55, w=44)
+    # إضافة الشعار في الجهة اليمنى (عمود N)
+    _add_logo(ws, anchor="N1", h=50, w=40)
 
     # ════════════════════════════════════════════════════════════
     # ROWS 2-8 — معلومات الموظف (A-D)  +  عنوان ورؤوس الجدول (G-N)
@@ -310,7 +311,6 @@ def build_employee_sheet(
         late_count = att_map.get(month_idx, 0)
         late_txt   = str(late_count) if late_count > 0 else "—"
 
-        # لون خلفية درجة التقييم
         if score_pct != "—":
             sv = float(score_pct.replace("%",""))
             sbg2 = GREEN_BG if sv >= 80 else (YELLOW if sv >= 60 else RED_BG)
@@ -467,9 +467,14 @@ def build_employee_sheet(
     _sc(ws.cell(r, 2, "التوقيع: _______________"),
         bold=True, bg=LGRAY, ah="center", brd=_BK)
 
+    # ════════════════════════════════════════════════════════════
+    # ضبط عرض العمود A تلقائياً (auto-fit)
+    # ════════════════════════════════════════════════════════════
+    _auto_fit_column_a(ws, start_row=1, end_row=ws.max_row)
+
     # ── إعداد الطباعة ──
     ws.page_setup.orientation  = "landscape"
-    ws.page_setup.paperSize    = 9          # A4
+    ws.page_setup.paperSize    = 9
     ws.page_setup.fitToPage    = True
     ws.page_setup.fitToWidth   = 1
     ws.page_setup.fitToHeight  = 0
@@ -485,12 +490,12 @@ def build_employee_sheet(
 # ═══════════════════════════════════════════════════════════════════
 def build_summary_sheet(
     wb,
-    rows,                       # list of (name, dept, months, pct, verb)
+    rows,
     title="ملخص التقييم",
     year=None,
     chart_img=None,
-    disciplinary_summary=None,  # dict {emp_name: {count, types}}  — اختياري
-    attendance_summary=None,    # dict {emp_name: late_count}       — اختياري
+    disciplinary_summary=None,
+    attendance_summary=None,
 ):
     ws = wb.create_sheet(title[:28])
     ws.sheet_view.rightToLeft  = True
@@ -510,11 +515,9 @@ def build_summary_sheet(
         bold=True, sz=12, color="FFFFFF", bg=DARK, ah="center", brd=_BK)
     _add_logo(ws, anchor="I1", h=30, w=24)
 
-    # Row 2 — فراغ
     ws.row_dimensions[2].height = 4
-
-    # Row 3 — رؤوس الأعمدة
     ws.row_dimensions[3].height = 16
+
     hdrs = ["#", "اسم الموظف", "القسم", "السنة",
             "الأشهر", "المعدل %", "التقييم",
             "الإجراءات التأديبية", "مرات التأخير"]
@@ -526,7 +529,6 @@ def build_summary_sheet(
     att_s  = attendance_summary  or {}
 
     for i, row_data in enumerate(rows, 4):
-        # دعم (name, dept, months, pct, verb)
         name, dept_, months, pct_val, verb_ = row_data[:5]
         ws.row_dimensions[i].height = 15
         rbg  = LGRAY if i % 2 == 0 else WHITE
@@ -558,7 +560,6 @@ def build_summary_sheet(
                     f"{late_cnt} مرة" if late_cnt > 0 else "—"),
             sz=8, ah="center", bg=att_bg, brd=INNER_B)
 
-    # حدود خارجية
     last = 3 + len(rows)
     thick_s = Side(style="medium", color="000000")
     for rr in range(3, last + 1):
@@ -575,6 +576,9 @@ def build_summary_sheet(
         ws.cell(last, c_idx).border = Border(
             left=b.left, right=b.right, top=b.top, bottom=thick_s)
 
+    # ضبط عرض العمود A تلقائياً في summary sheet
+    _auto_fit_column_a(ws, start_row=1, end_row=ws.max_row)
+
     ws.page_setup.orientation = "landscape"
     ws.page_setup.paperSize   = 9
     ws.page_setup.fitToPage   = True
@@ -583,6 +587,7 @@ def build_summary_sheet(
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_margins = PageMargins(left=0.4, right=0.4, top=0.4, bottom=0.4)
     ws.print_options.horizontalCentered = True
+    ws.print_options.verticalCentered = True
 
     return ws
 
@@ -601,11 +606,6 @@ def _rgb_to_hex(color_obj):
 
 
 def print_preview_html(xlsx_buf, title="تقرير", chart_b64=""):
-    """
-    HTML للطباعة — صفحة واحدة A4 Landscape مضمونة.
-    CSS ثابت 100% — بدون JavaScript.
-    transform:scale(0.62) ثابت مع transform-origin:top right.
-    """
     xlsx_buf.seek(0)
     wb = openpyxl.load_workbook(xlsx_buf, data_only=True)
 
@@ -764,7 +764,7 @@ td {
             colgroup += f'<col style="width:{col_widths.get(c, 50)}px;">'
         colgroup += "</colgroup>"
 
-        parts.append(f'<div class="page">{logo_tag}<tr>{colgroup}')
+        parts.append(f'<div class="page">{logo_tag}<table>{colgroup}')
 
         for r in range(1, ws.max_row + 1):
             rh_raw = ws.row_dimensions[r].height if r in ws.row_dimensions else 13
@@ -823,7 +823,7 @@ td {
                     if rs2 > 1: span += f' rowspan="{rs2}"'
                     if cs2 > 1: span += f' colspan="{cs2}"'
 
-                parts.append(f'<td style="{style}"{span}>{text}</table>')
+                parts.append(f'<td style="{style}"{span}>{text}</td>')
 
             parts.append("</table>")
 
@@ -836,7 +836,7 @@ td {
                 'border:1px solid #E2E8F0;border-radius:4px;" />'
                 "</div>"
             )
-        parts.append(f"</table>{chart_section}</div>")
+        parts.append(f"<tr>{chart_section}</div>")
 
     parts.append("</body></html>")
     return "".join(parts)
