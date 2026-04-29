@@ -248,9 +248,9 @@ def render_employee_report(df_emp, df_kpi, df_data):
     st.markdown("---")
 
     if done2:
-        # ============================================================
-        # جدول نتيجة التقييم الشهري (المطلوب)
-        # ============================================================
+        # ------------------------------------------------------------
+        # جدول نتيجة التقييم الشهري (بتنسيق جانبي مثل Excel)
+        # ------------------------------------------------------------
         st.markdown("### 📅 نتيجة التقييم الشهري")
         
         monthly_table_data = []
@@ -288,7 +288,9 @@ def render_employee_report(df_emp, df_kpi, df_data):
         
         st.markdown("---")
         
-        # مؤشرات الأداء الوظيفي والصفات الشخصية
+        # ------------------------------------------------------------
+        # مؤشرات الأداء الوظيفي والصفات الشخصية (عمودين)
+        # ------------------------------------------------------------
         col_kpi, col_pers = st.columns(2)
         
         with col_kpi:
@@ -317,7 +319,9 @@ def render_employee_report(df_emp, df_kpi, df_data):
             else:
                 st.info("لا توجد مؤشرات صفات شخصية")
 
-        # الإجراءات التأديبية
+        # ------------------------------------------------------------
+        # الإجراءات التأديبية المسجلة
+        # ------------------------------------------------------------
         if disciplinary_df is not None and not disciplinary_df.empty:
             st.subheader("⚠️ الإجراءات التأديبية المسجلة")
             disc_display = disciplinary_df.copy()
@@ -332,7 +336,9 @@ def render_employee_report(df_emp, df_kpi, df_data):
             if available_cols:
                 st.dataframe(disc_display[available_cols], use_container_width=True, hide_index=True)
 
+        # ------------------------------------------------------------
         # الالتزام بالدوام
+        # ------------------------------------------------------------
         if attendance_count > 0 or attendance_hours > 0:
             st.subheader("⏰ الالتزام بالدوام")
             att_col1, att_col2 = st.columns(2)
@@ -341,14 +347,18 @@ def render_employee_report(df_emp, df_kpi, df_data):
             with att_col2:
                 st.metric("⏱️ إجمالي ساعات التأخير", f"{attendance_hours:.2f}")
 
+        # ------------------------------------------------------------
         # ملاحظات وتدريب
+        # ------------------------------------------------------------
         cn, ct = st.columns(2)
         with cn:
             st.info(f"📝 **ملاحظات المقيم:** {notes2 or '—'}")
         with ct:
             st.info(f"🎓 **الاحتياجات التدريبية:** {training2 or '—'}")
 
+        # ------------------------------------------------------------
         # الرسم البياني
+        # ------------------------------------------------------------
         months_done_list = [(MONTHS_AR[n-1], round(s*100, 1)) for n, _, s, *_ in monthly_rep if s > 0]
         if months_done_list and PLOTLY_OK:
             st.markdown("---")
@@ -361,7 +371,9 @@ def render_employee_report(df_emp, df_kpi, df_data):
     else:
         st.info("لا توجد تقييمات")
 
+    # ------------------------------------------------------------
     # تحميل التقرير
+    # ------------------------------------------------------------
     st.subheader("⬇️ تحميل التقرير")
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
