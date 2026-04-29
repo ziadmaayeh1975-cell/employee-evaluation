@@ -425,7 +425,7 @@ def build_employee_sheet(
     if disc_map:
         ws.row_dimensions[r].height = 14
         _mc(ws, r, 1, r, 4, "⚠️ الإجراءات التأديبية المسجلة",
-            bold=True, color="FFFFFF", bg=_DISC_BG.replace("FEE2E2","C00000"),
+            bold=True, color="FFFFFF", bg="C00000",
             ah="right", brd=_TN)
         r += 1
         for mn, actions in sorted(disc_map.items()):
@@ -764,7 +764,7 @@ td {
             colgroup += f'<col style="width:{col_widths.get(c, 50)}px;">'
         colgroup += "</colgroup>"
 
-        parts.append(f'<div class="page">{logo_tag}<table>{colgroup}')
+        parts.append(f'<div class="page">{logo_tag}</table>{colgroup}')
 
         for r in range(1, ws.max_row + 1):
             rh_raw = ws.row_dimensions[r].height if r in ws.row_dimensions else 13
@@ -823,9 +823,9 @@ td {
                     if rs2 > 1: span += f' rowspan="{rs2}"'
                     if cs2 > 1: span += f' colspan="{cs2}"'
 
-                parts.append(f'<td style="{style}"{span}>{text}</td>')
+                parts.append(f'<td style="{style}"{span}>{text}</table>')
 
-            parts.append("</tr>")
+            parts.append("<table>")
 
         chart_section = ""
         if chart_b64:
@@ -836,7 +836,7 @@ td {
                 'border:1px solid #E2E8F0;border-radius:4px;" />'
                 "</div>"
             )
-        parts.append(f"</table>{chart_section}</div>")
+        parts.append(f"<table>{chart_section}</div>")
 
     parts.append("</body></html>")
     return "".join(parts)
