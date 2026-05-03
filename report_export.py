@@ -122,13 +122,11 @@ def _auto_fit_column_a(ws, start_row=1, end_row=None):
 def _disc_by_month(disciplinary_actions):
     """
     تحويل الإجراءات التأديبية إلى قاموس حسب الشهر
-    المتوقع: DataFrame يحتوي على أعمدة action_date, warning_type
     """
     result = {}
     if disciplinary_actions is None:
         return result
     try:
-        # التحقق من أن disciplinary_actions ليس فارغاً
         if hasattr(disciplinary_actions, "empty") and disciplinary_actions.empty:
             return result
         if hasattr(disciplinary_actions, "iterrows"):
@@ -137,18 +135,15 @@ def _disc_by_month(disciplinary_actions):
                 if not dd:
                     continue
                 try:
-                    # استخراج الشهر من التاريخ (YYYY-MM-DD)
                     mn = int(dd.split("-")[1])
                     warning_type = str(row.get("warning_type", "") or "")
                     reason = str(row.get("reason", "") or "")
-                    # نضيف نوع الإنذار + السبب في النص
                     full_text = warning_type
                     if reason and reason not in ("", "nan", "None"):
                         full_text += f" - {reason}"
                     result.setdefault(mn, []).append(full_text)
                 except Exception:
                     pass
-        # إذا كان disciplinary_actions قائمة (list)
         elif isinstance(disciplinary_actions, list):
             for item in disciplinary_actions:
                 dd = str(item.get("action_date", "") or "")
@@ -170,10 +165,6 @@ def _disc_by_month(disciplinary_actions):
 
 
 def _att_by_month(attendance_data):
-    """
-    تحويل بيانات التأخير إلى قاموس لكل شهر
-    المتوقع: DataFrame يحتوي على أعمدة month, late_count, late_hours
-    """
     result = {}
     result_hours = {}
     if attendance_data is None:
@@ -223,7 +214,6 @@ def build_employee_sheet(
     ws.sheet_view.rightToLeft = True
     ws.sheet_view.showGridLines = False
 
-    # إعداد عرض الأعمدة
     col_cfg = {
         "A": 5, "B": 26, "C": 16, "D": 13,
         "E": 2, "F": 2,
@@ -234,7 +224,6 @@ def build_employee_sheet(
     for col, w in col_cfg.items():
         ws.column_dimensions[col].width = w
 
-    # معالجة البيانات
     m_train = {}
     for item in monthly_scores:
         ms = item[1]
@@ -247,6 +236,7 @@ def build_employee_sheet(
     sc_c = "375623" if pct >= 80 else ("C00000" if pct < 60 else "7F6000")
     sbg = GREEN_BG if pct >= 80 else (YELLOW if pct >= 60 else RED_BG)
 
+    # الأوزان تبقى كما هي من kpis - لم يتم تغييرها
     job_kpis = [(k["KPI_Name"], k["Weight"], k.get("avg_score", 0))
                 for k in kpis if k["KPI_Name"] not in PERSONAL_KPIS]
     per_kpis = [(k["KPI_Name"], k["Weight"], k.get("avg_score", 0))
@@ -258,17 +248,13 @@ def build_employee_sheet(
     total_late_count = sum(att_count_map.values())
     total_late_hours = sum(att_hours_map.values())
 
-    # ════════════════════════════════════════════════════════════
     # ROW 1 — ترويسة
-    # ════════════════════════════════════════════════════════════
     ws.row_dimensions[1].height = 32
     _mc(ws, 1, 1, 1, 15, _company_header(),
         bold=True, sz=11, color="FFFFFF", bg=DARK, ah="center")
     _add_logo(ws, anchor="A1", h=45, w=36)
 
-    # ════════════════════════════════════════════════════════════
-    # ROWS 2-8 — معلومات الموظف (A-D)
-    # ════════════════════════════════════════════════════════════
+    # ROWS 2-8 — معلومات الموظف
     INFO = [
         ("اسم الموظف", emp_name),
         ("رقم الموظف", employee_id),
@@ -285,16 +271,12 @@ def build_employee_sheet(
         ws.merge_cells(start_row=rr, start_column=2, end_row=rr, end_column=4)
         _sc(ws.cell(rr, 2, val), color="000000", bg=_INFO_BG, ah="right", brd=_TN)
 
-    # ════════════════════════════════════════════════════════════
     # ROW 3 — عنوان الجدول الشهري
-    # ════════════════════════════════════════════════════════════
     ws.row_dimensions[3].height = 18
     _mc(ws, 3, 7, 3, 14, "نتيجة التقييم الشهري",
         bold=True, sz=10, color="FFFFFF", bg=DARK, ah="center", brd=_TN)
 
-    # ════════════════════════════════════════════════════════════
     # ROW 4 — رؤوس أعمدة الجدول الشهري
-    # ════════════════════════════════════════════════════════════
     ws.row_dimensions[4].height = 15
     mth_hdrs = [
         "الشهر", "الدرجة (%)", "التقييم اللفظي",
@@ -305,9 +287,7 @@ def build_employee_sheet(
         _sc(ws.cell(4, ci, h), bold=True, sz=8, color="FFFFFF", bg=MID,
             ah="center", brd=_TN)
 
-    # ════════════════════════════════════════════════════════════
-    # ROWS 5-16 — بيانات الأشهر الـ12 (تبدأ من الصف 5)
-    # ════════════════════════════════════════════════════════════
+    # ROWS 5-16 — بيانات الأشهر الـ12
     for month_idx, month_name in enumerate(_MONTHS_LIST, 1):
         mr = 4 + month_idx
         ws.row_dimensions[mr].height = 15
@@ -359,9 +339,7 @@ def build_employee_sheet(
         _sc(ws.cell(mr, 14, late_hours_txt), bg=(_ATT_BG if late_hours > 0 else rbg),
             ah="center", sz=8, brd=_TN)
 
-    # ════════════════════════════════════════════════════════════
     # ROW 17 — إجمالي الإجراءات والتأخير
-    # ════════════════════════════════════════════════════════════
     ws.row_dimensions[17].height = 15
     total_disc = sum(len(v) for v in disc_map.values())
     _mc(ws, 17, 7, 17, 11, "الإجماليات السنوية",
@@ -376,21 +354,17 @@ def build_employee_sheet(
                 f"إجمالي ساعات التأخير: {total_late_hours:.2f}" if total_late_hours > 0 else "لا تأخير"),
         bold=True, bg=_ATT_BG, ah="center", sz=8, brd=_TN)
 
-    # ════════════════════════════════════════════════════════════
     # ROW 10 — نتيجة التقييم السنوي
-    # ════════════════════════════════════════════════════════════
     ws.row_dimensions[10].height = 17
     _mc(ws, 10, 1, 10, 2, "نتيجة التقييم السنوي",
         bold=True, color="FFFFFF", bg=ORANGE, ah="center", brd=_TN)
     _mc(ws, 10, 3, 10, 4, f"{int(round(pct))}% — {verb}",
         bold=True, sz=10, color=sc_c, bg=sbg, ah="center", brd=_TN)
 
-    # ════════════════════════════════════════════════════════════
-    # KPI SECTION (يبدأ من ROW 11)
-    # ════════════════════════════════════════════════════════════
+    # KPI SECTION
     r = 11
 
-    # ── مؤشرات الأداء الوظيفي ──
+    # مؤشرات الأداء الوظيفي
     ws.row_dimensions[r].height = 15
     _sc(ws.cell(r, 1, "مؤشرات الأداء الوظيفي"), bold=True, color="FFFFFF", bg=DARK, ah="right", brd=_TN)
     _sc(ws.cell(r, 2, "الوزن %"), bold=True, color="FFFFFF", bg=DARK, ah="center", brd=_TN)
@@ -402,7 +376,7 @@ def build_employee_sheet(
     for i, (kname, weight, grade) in enumerate(job_kpis):
         rbg = LGRAY if i % 2 == 0 else WHITE
         w, g = float(weight), float(grade)
-        pct_val = round(g, 1)  # grade هي النسبة المئوية بالفعل من get_kpi_avgs
+        pct_val = round(g, 1)
         lbl = rating_label(pct_val)
         job_total_score += g
         job_total_weight += w
@@ -424,7 +398,7 @@ def build_employee_sheet(
     _sc(ws.cell(r, 4, rating_label(jp)), bold=True, color="FFFFFF", bg=MID, ah="center", brd=_TN)
     r += 2
 
-    # ── مؤشرات الصفات الشخصية ──
+    # مؤشرات الصفات الشخصية
     ws.row_dimensions[r].height = 14
     _mc(ws, r, 1, r, 4, "مؤشرات الصفات الشخصية",
         bold=True, color="FFFFFF", bg=ORANGE, ah="center", brd=_TN)
@@ -462,9 +436,7 @@ def build_employee_sheet(
     _sc(ws.cell(r, 4, rating_label(pp)), bold=True, color="FFFFFF", bg=ORANGE, ah="center", brd=_TN)
     r += 2
 
-    # ════════════════════════════════════════════════════════════
     # الإجراءات التأديبية المسجلة
-    # ════════════════════════════════════════════════════════════
     if disc_map:
         ws.row_dimensions[r].height = 14
         _mc(ws, r, 1, r, 4, "⚠️ الإجراءات التأديبية المسجلة",
@@ -491,9 +463,7 @@ def build_employee_sheet(
         r += 1
         r += 1
 
-    # ════════════════════════════════════════════════════════════
     # الالتزام بالدوام
-    # ════════════════════════════════════════════════════════════
     ws.row_dimensions[r].height = 14
     _mc(ws, r, 1, r, 4, "⏰ الالتزام بالدوام",
         bold=True, color="FFFFFF", bg="1F3864", ah="right", brd=_TN)
@@ -511,9 +481,7 @@ def build_employee_sheet(
     _sc(ws.cell(r, 2, f"{total_late_hours:.2f}"), bg=_ATT_BG, ah="right", sz=8, brd=_TN)
     r += 2
 
-    # ════════════════════════════════════════════════════════════
     # ملاحظات المقيم والاحتياجات التدريبية
-    # ════════════════════════════════════════════════════════════
     ws.row_dimensions[r].height = 20
     _train_vals = [v for v in m_train.values()
                    if v and str(v).strip() not in ("", "nan", "None", "—")]
@@ -526,9 +494,7 @@ def build_employee_sheet(
         bg=_TRAIN_BG, wrap=True, brd=_TN)
     r += 2
 
-    # ════════════════════════════════════════════════════════════
     # التوقيع
-    # ════════════════════════════════════════════════════════════
     ws.row_dimensions[r].height = 16
     _sc(ws.cell(r, 1, f"المسؤول المباشر: {manager}"),
         bold=True, ah="center", brd=_BK)
@@ -543,10 +509,8 @@ def build_employee_sheet(
     _sc(ws.cell(r, 2, "التوقيع: _______________"),
         bold=True, bg=LGRAY, ah="center", brd=_BK)
 
-    # ضبط عرض العمود A تلقائياً
     _auto_fit_column_a(ws, start_row=1, end_row=ws.max_row)
 
-    # إعداد الطباعة
     ws.page_setup.orientation = "landscape"
     ws.page_setup.paperSize = 9
     ws.page_setup.fitToPage = True
@@ -984,7 +948,6 @@ td:first-child {
 """
 
     def parse_table_from_ws(ws):
-        """تحويل ورقة العمل إلى HTML"""
         if ws.max_row == 0:
             return ""
         
@@ -1080,7 +1043,7 @@ td:first-child {
                 
                 html += f'<td style="{style}"{span}>{text}</td>'
             
-            html += '</tr>'
+            html += '</table>'
         
         html += '</table></div>'
         return html
