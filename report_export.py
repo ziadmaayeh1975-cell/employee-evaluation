@@ -163,6 +163,12 @@ def _att_by_month(attendance_data):
             if mn:
                 result[int(mn)] = int(attendance_data.get("late_count", 0) or 0)
                 result_hours[int(mn)] = float(attendance_data.get("late_hours", 0) or 0.0)
+        elif isinstance(attendance_data, list):
+            for item in attendance_data:
+                mn = item.get("month")
+                if mn:
+                    result[int(mn)] = int(item.get("late_count", 0) or 0)
+                    result_hours[int(mn)] = float(item.get("late_hours", 0) or 0.0)
     except Exception:
         pass
     return result, result_hours
@@ -446,6 +452,16 @@ def build_employee_sheet(
                     bg=_DISC_BG, ah="right", sz=8, brd=_TN)
                 r += 1
         r += 1
+    else:
+        ws.row_dimensions[r].height = 14
+        _mc(ws, r, 1, r, 4, "⚠️ الإجراءات التأديبية المسجلة",
+            bold=True, color="FFFFFF", bg="C00000", ah="right", brd=_TN)
+        r += 1
+        ws.row_dimensions[r].height = 13
+        _mc(ws, r, 1, r, 4, "لا توجد إجراءات تأديبية مسجلة",
+            bg=_DISC_BG, ah="center", sz=8, brd=_TN)
+        r += 1
+        r += 1
 
     # ════════════════════════════════════════════════════════════
     # الالتزام بالدوام (أسفل الإجراءات التأديبية) - مع إجمالي الساعات
@@ -456,13 +472,13 @@ def build_employee_sheet(
     r += 1
     
     ws.row_dimensions[r].height = 13
-    _sc(ws.cell(r, 1, "إجمالي عدد مرات التأخير"), bg=_ATT_BG, ah="right", sz=8, brd=_TN)
+    _sc(ws.cell(r, 1, "إجمالي عدد مرات التأخير"), bold=True, bg=_ATT_BG, ah="right", sz=8, brd=_TN)
     ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=4)
     _sc(ws.cell(r, 2, str(total_late_count)), bg=_ATT_BG, ah="right", sz=8, brd=_TN)
     r += 1
     
     ws.row_dimensions[r].height = 13
-    _sc(ws.cell(r, 1, "إجمالي ساعات التأخير"), bg=_ATT_BG, ah="right", sz=8, brd=_TN)
+    _sc(ws.cell(r, 1, "إجمالي ساعات التأخير"), bold=True, bg=_ATT_BG, ah="right", sz=8, brd=_TN)
     ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=4)
     _sc(ws.cell(r, 2, f"{total_late_hours:.2f}"), bg=_ATT_BG, ah="right", sz=8, brd=_TN)
     r += 2
@@ -549,7 +565,7 @@ def build_summary_sheet(
 
     hdrs = ["#", "اسم الموظف", "القسم", "السنة",
             "الأشهر", "المعدل %", "التقييم",
-            "الإجراءات التأديبية", "مرات التأخير", "ساعات التأخير"]
+            "الإجراءات التأديبية", "عدد مرات التأخير", "إجمالي ساعات التأخير"]
     for ci, h in enumerate(hdrs, 1):
         _sc(ws.cell(3, ci, h), bold=True, sz=9, color="FFFFFF",
             bg=DARK, ah="center", brd=_BK)
@@ -575,8 +591,12 @@ def build_summary_sheet(
         
         # إذا لم يتم تمرير late_count في row_data، نستخدم من attendance_summary
         if late_count == 0 and att_s:
-            late_count = int(att_s.get(name, {}).get("count", 0) if isinstance(att_s.get(name), dict) else att_s.get(name, 0))
-            late_hours = float(att_s.get(name, {}).get("hours", 0) if isinstance(att_s.get(name), dict) else 0.0)
+            att_info = att_s.get(name, {})
+            if isinstance(att_info, dict):
+                late_count = att_info.get("count", 0)
+                late_hours = att_info.get("hours", 0.0)
+            else:
+                late_count = int(att_info or 0)
 
         disc_bg = _DISC_BG if disc_cnt > 0 else rbg
         att_bg = _ATT_BG if late_count > 0 else rbg
@@ -630,7 +650,7 @@ def build_summary_sheet(
 
 
 # ═══════════════════════════════════════════════════════════════════
-# print_preview_html (نسخة محسنة ومصححة)
+# print_preview_html (نسخة محسنة ومصححة بالكامل)
 # ═══════════════════════════════════════════════════════════════════
 def _rgb_to_hex(color_obj):
     try:
@@ -980,7 +1000,7 @@ td:first-child {
             html += f'<tr {height_style}>'
             
             for c in range(1, max_col + 1):
-                if col_widths.get(c, 0) == 0 and c not in [7, 8, 9, 10, 11, 12, 13, 14]:
+                if col_widths.get(c, 0) == 0:
                     continue
                 if (r, c) in skip:
                     continue
@@ -1041,7 +1061,7 @@ td:first-child {
                 
                 html += f'<td style="{style}"{span}>{text}</td>'
             
-            html += '</tr>'
+            html += '<tr>'
         
         html += '</table></div>'
         return html
