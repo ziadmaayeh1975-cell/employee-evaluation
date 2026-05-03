@@ -78,9 +78,8 @@ def get_kpi_avgs(df_data, df_kpi, emp, job, months_filter=None, year=None):
     """
     ترجع قائمة من dicts تحتوي على:
       - KPI_Name  : اسم المؤشر
-      - Weight    : الوزن (كما هو في قاعدة البيانات - لم يتم تغييره)
-      - avg_score : متوسط الدرجة كنسبة مئوية 0-100 (فقط للعرض)
-    ملاحظة: الأوزان لم يتم تعديلها، تبقى كما هي في قاعدة البيانات
+      - Weight    : الوزن الأصلي من قاعدة البيانات
+      - avg_score : متوسط الدرجة كنسبة مئوية 0-100
     """
     result = []
     
@@ -118,8 +117,10 @@ def get_kpi_avgs(df_data, df_kpi, emp, job, months_filter=None, year=None):
             sub = sub[sub["Year"] == int(year)]
         
         if not sub.empty:
+            # KPI_% هي الدرجة الفعلية (من 0 إلى الوزن)
             avg_kpi_score = sub["KPI_%"].mean()
             if weight > 0:
+                # تحويل إلى نسبة مئوية 0-100
                 avg_percentage = round((avg_kpi_score / weight) * 100, 1)
             else:
                 avg_percentage = 0.0
@@ -128,7 +129,7 @@ def get_kpi_avgs(df_data, df_kpi, emp, job, months_filter=None, year=None):
         
         result.append({
             "KPI_Name":  kname_str,
-            "Weight":    weight,  # الوزن الأصلي كما هو في قاعدة البيانات
+            "Weight":    weight,
             "avg_score": avg_percentage,
         })
     
