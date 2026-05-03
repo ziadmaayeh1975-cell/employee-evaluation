@@ -138,7 +138,7 @@ def render_department_report(df_emp, df_kpi, df_data):
         active3 = [s for s in s_list if s > 0]
         avg3 = sum(active3) / len(active3) if active3 else 0.0
         
-        # جلب بيانات الالتزام بالدوام للموظف (لكل شهر على حدة)
+        # جلب بيانات الالتزام بالدوام للموظف
         attendance_monthly = {}
         attendance_count = 0
         attendance_hours = 0.0
@@ -193,14 +193,26 @@ def render_department_report(df_emp, df_kpi, df_data):
 
     wb3 = openpyxl.Workbook()
     wb3.remove(wb3.active)
+    
     for s in summary3:
         ei3 = df_emp[df_emp["EmployeeName"] == s["emp"]]
-        if ei3.empty: continue
+        if ei3.empty: 
+            continue
         ei3 = ei3.iloc[0]
         job3 = str(ei3.iloc[1]).strip()
         d3 = str(ei3.iloc[2]).strip()
         m3 = str(ei3.iloc[3]).strip()
+        
+        # ✅ جلب مؤشرات الأداء (مع التأكد من تمرير months_en_f3)
         kpis3 = get_kpi_avgs(df_data, df_kpi, s["emp"], job3, months_en_f3, sel3_year)
+        
+        # ✅ للتصحيح: طباعة عدد المؤشرات التي تم جلبها
+        if kpis3:
+            print(f"✅ تم جلب {len(kpis3)} مؤشر للموظف {s['emp']}")
+        else:
+            print(f"⚠️ لم يتم جلب أي مؤشر للموظف {s['emp']}")
+        
+        # إعداد البيانات الشهرية
         ms3 = []
         for idx, (en, short) in enumerate(zip(MONTHS_EN, MONTHS_SHORT)):
             if months_en_f3 and en not in months_en_f3:
@@ -209,6 +221,8 @@ def render_department_report(df_emp, df_kpi, df_data):
                 score = calc_monthly(df_data, s["emp"], en, sel3_year)
                 ev, nm, tr = _get_month_details(df_data, s["emp"], en, sel3_year)
                 ms3.append((idx+1, short, score, ev, nm, tr))
+        
+        # جلب ملاحظات وتدريب الموظف
         emp_notes = ""; emp_train = ""
         for item in ms3:
             if item[2] > 0:
@@ -238,9 +252,18 @@ def render_department_report(df_emp, df_kpi, df_data):
                     "total_late_hours": s["attendance_hours"]
                 }])
         
+        # ✅ بناء شيت الموظف مع تمرير جميع البيانات
         build_employee_sheet(
-            wb3, s["emp"], job3, d3, m3, sel3_year,
-            kpis3, ms3, emp_notes, emp_train,
+            wb3, 
+            s["emp"], 
+            job3, 
+            d3, 
+            m3, 
+            sel3_year,
+            kpis3,  # ✅ مؤشرات الأداء (الوظيفي + الشخصي)
+            ms3,    # ✅ البيانات الشهرية
+            emp_notes, 
+            emp_train,
             employee_id=s["emp_id"],
             attendance_data=attendance_export,
             disciplinary_actions=s.get("disciplinary_df")
@@ -257,7 +280,8 @@ def render_department_report(df_emp, df_kpi, df_data):
     st.download_button(
         label=f"📥 تحميل Excel ({len(summary3)} موظف)",
         data=buf3, file_name=f"تقارير_{d_label}_{date.today()}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+        use_container_width=True,
     )
     st.markdown("---")
     st.markdown("#### 🖨️ معاينة وطباعة")
