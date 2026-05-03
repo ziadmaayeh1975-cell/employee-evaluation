@@ -203,14 +203,8 @@ def render_department_report(df_emp, df_kpi, df_data):
         d3 = str(ei3.iloc[2]).strip()
         m3 = str(ei3.iloc[3]).strip()
         
-        # ✅ جلب مؤشرات الأداء (مع التأكد من تمرير months_en_f3)
+        # جلب مؤشرات الأداء
         kpis3 = get_kpi_avgs(df_data, df_kpi, s["emp"], job3, months_en_f3, sel3_year)
-        
-        # ✅ للتصحيح: طباعة عدد المؤشرات التي تم جلبها
-        if kpis3:
-            print(f"✅ تم جلب {len(kpis3)} مؤشر للموظف {s['emp']}")
-        else:
-            print(f"⚠️ لم يتم جلب أي مؤشر للموظف {s['emp']}")
         
         # إعداد البيانات الشهرية
         ms3 = []
@@ -252,7 +246,6 @@ def render_department_report(df_emp, df_kpi, df_data):
                     "total_late_hours": s["attendance_hours"]
                 }])
         
-        # ✅ بناء شيت الموظف مع تمرير جميع البيانات
         build_employee_sheet(
             wb3, 
             s["emp"], 
@@ -260,8 +253,8 @@ def render_department_report(df_emp, df_kpi, df_data):
             d3, 
             m3, 
             sel3_year,
-            kpis3,  # ✅ مؤشرات الأداء (الوظيفي + الشخصي)
-            ms3,    # ✅ البيانات الشهرية
+            kpis3,
+            ms3, 
             emp_notes, 
             emp_train,
             employee_id=s["emp_id"],
