@@ -3,8 +3,8 @@ from datetime import date
 import openpyxl
 import pandas as pd
 import streamlit as st
-from constants import MONTHS_AR, MONTHS_EN, MONTHS_SHORT, MONTH_MAP, PERSONAL_KPIS
-from calculations import calc_monthly, get_kpi_avgs, verbal_grade
+from constants import MONTHS_AR, MONTHS_EN, MONTHS_SHORT, MONTH_MAP, PERSONAL_KPIS, PERSONAL_WEIGHT
+from calculations import calc_monthly, verbal_grade, kpi_score_to_pct, rating_label
 from data_loader import get_emp_notes
 from auth import get_current_reviewer, get_current_role
 from report_export import build_employee_sheet, build_summary_sheet, print_preview_html
@@ -91,6 +91,65 @@ def _get_month_details(df_data, emp_name, month_en, year):
             if val and val not in ("","nan","None"):
                 training = val; break
     return eval_date, notes, training
+
+
+def get_kpis_for_employee(df_data, df_kpi, emp, job, months_filter, year):
+    """
+    نفس طريقة سحب المؤشرات المستخدمة في employee_report.py
+    """
+    job_kpis = []
+    pers_kpis = []
+    
+    job_kpis_df = df_kpi[df_kpi["JobTitle"] == job]
+    
+    for _, row in job_kpis_df.iterrows():
+        kpi_name = row["KPI_Name"]
+        weight = float(row["Weight"])
+        
+        if kpi_name in PERSONAL_KPIS:
+            continue
+        
+        scores = []
+        for en in MONTHS_EN:
+            if months_filter and en not in months_filter:
+                continue
+            mask = (
+                (df_data["EmployeeName"] == emp) &
+                (df_data["Month"] == en) &
+                (df_data["Year"] == int(year)) &
+                (df_data["KPI_Name"] == kpi_name)
+            )
+            sub = df_data[mask]
+            if not sub.empty:
+                scores.append(sub["KPI_%"].sum())
+        avg_score = sum(scores) / len(scores) if scores else 0.0
+        job_kpis.append((kpi_name, weight, avg_score))
+    
+    # مؤشرات الصفات الشخصية
+    personal_kpis_df = df_kpi[(df_kpi["JobTitle"] == job) & (df_kpi["KPI_Name"].isin(PERSONAL_KPIS))]
+    source_kpis = personal_kpis_df.iterrows() if not personal_kpis_df.empty else [
+        (None, {"KPI_Name": k, "Weight": PERSONAL_WEIGHT}) for k in PERSONAL_KPIS
+    ]
+    for _, row in source_kpis:
+        kpi_name = row["KPI_Name"]
+        weight = float(row["Weight"])
+        scores = []
+        for en in MONTHS_EN:
+            if months_filter and en not in months_filter:
+                continue
+            mask = (
+                (df_data["EmployeeName"] == emp) &
+                (df_data["Month"] == en) &
+                (df_data["Year"] == int(year)) &
+                (df_data["KPI_Name"] == kpi_name)
+            )
+            sub = df_data[mask]
+            if not sub.empty:
+                scores.append(sub["KPI_%"].sum())
+        avg_score = sum(scores) / len(scores) if scores else 0.0
+        pers_kpis.append((kpi_name, weight, avg_score))
+    
+    return job_kpis, pers_kpis
 
 
 def render_department_report(df_emp, df_kpi, df_data):
@@ -203,8 +262,17 @@ def render_department_report(df_emp, df_kpi, df_data):
         d3 = str(ei3.iloc[2]).strip()
         m3 = str(ei3.iloc[3]).strip()
         
-        # جلب مؤشرات الأداء
-        kpis3 = get_kpi_avgs(df_data, df_kpi, s["emp"], job3, months_en_f3, sel3_year)
+        # ✅ استخدام نفس طريقة سحب المؤشرات من employee_report.py
+        job_kpis, pers_kpis = get_kpis_for_employee(df_data, df_kpi, s["emp"], job3, months_en_f3, sel3_year)
+        
+        # تحويل إلى نفس شكل kpis_export المستخدم في build_employee_sheet
+        kpis_export = []
+        for k, w, g in job_kpis + pers_kpis:
+            kpis_export.append({
+                "KPI_Name": k,
+                "Weight": w,
+                "avg_score": round(kpi_score_to_pct(g, w), 1)  # تحويل الدرجة الفعلية إلى نسبة مئوية
+            })
         
         # إعداد البيانات الشهرية
         ms3 = []
@@ -253,7 +321,7 @@ def render_department_report(df_emp, df_kpi, df_data):
             d3, 
             m3, 
             sel3_year,
-            kpis3,
+            kpis_export,  # ✅ باستخدام نفس شكل البيانات من employee_report.py
             ms3, 
             emp_notes, 
             emp_train,
