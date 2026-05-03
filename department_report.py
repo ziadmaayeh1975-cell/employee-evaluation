@@ -9,13 +9,14 @@ from data_loader import get_emp_notes
 from auth import get_current_reviewer, get_current_role
 from report_export import build_employee_sheet, build_summary_sheet, print_preview_html
 
-# استيراد نظام الإجراءات التأديبية والالتزام بالدوام
+# استيراد نظام الإجراءات التأديبية
 try:
     from disciplinary_manager import get_actions_by_employee
     DISCIPLINARY_AVAILABLE = True
 except ImportError:
     DISCIPLINARY_AVAILABLE = False
 
+# استيراد نظام الالتزام بالدوام
 try:
     from attendance_manager import get_employee_attendance_summary
     ATTENDANCE_AVAILABLE = True
@@ -177,7 +178,7 @@ def render_department_report(df_emp, df_kpi, df_data):
         })
     summary3.sort(key=lambda x: x["pct"], reverse=True)
 
-    # عرض جدول الملخص مع إضافة بيانات الالتزام بالدوام
+    # عرض جدول الملخص
     display_df = pd.DataFrame([{
         "الموظف": s["emp"], 
         "القسم": s["dept"], 
@@ -215,7 +216,7 @@ def render_department_report(df_emp, df_kpi, df_data):
         if not emp_notes and not emp_train:
             emp_notes, emp_train = get_emp_notes(s["emp"])
         
-        # تحضير بيانات الالتزام بالدوام للتصدير (لكل شهر)
+        # تحضير بيانات الالتزام بالدوام للتصدير
         attendance_export = None
         if s["attendance_count"] > 0 or s["attendance_hours"] > 0:
             monthly_list = []
@@ -237,7 +238,6 @@ def render_department_report(df_emp, df_kpi, df_data):
                     "total_late_hours": s["attendance_hours"]
                 }])
         
-        # تمرير الإجراءات التأديبية إلى build_employee_sheet
         build_employee_sheet(
             wb3, s["emp"], job3, d3, m3, sel3_year,
             kpis3, ms3, emp_notes, emp_train,
