@@ -105,43 +105,7 @@ def _add_logo(ws, anchor="A1", h=45, w=36):
             break
 
 
-def _auto_fit_columns_range(ws, start_col, end_col, start_row=1, end_row=None, min_width=5, max_width=35):
-    """
-    ضبط عرض الأعمدة تلقائياً في نطاق محدد
-    start_col, end_col: رقم العمود (1-indexed)
-    """
-    if end_row is None:
-        end_row = ws.max_row
-    
-    for col in range(start_col, end_col + 1):
-        max_len = 0
-        col_letter = get_column_letter(col)
-        
-        # حساب أقصى طول للنص في هذا العمود
-        for row in range(start_row, end_row + 1):
-            cell = ws.cell(row, col)
-            if cell.value:
-                try:
-                    text = str(cell.value)
-                    text_len = len(text)
-                    # النصوص العربية تحتاج عرض أكبر قليلاً
-                    if any('\u0600' <= c <= '\u06FF' for c in text):
-                        text_len = int(text_len * 1.2)
-                    # النصوص الطويلة جداً (مثل الملاحظات) نحدها
-                    if text_len > 50:
-                        text_len = 35
-                    max_len = max(max_len, text_len)
-                except:
-                    pass
-        
-        # تعيين العرض المناسب
-        new_width = min(max(max_len + 2, min_width), max_width)
-        if new_width > 0:
-            ws.column_dimensions[col_letter].width = new_width
-
-
 def _auto_fit_column_a(ws, start_row=1, end_row=None):
-    """ضبط عرض العمود A فقط"""
     max_len = 0
     if end_row is None:
         end_row = ws.max_row
@@ -152,7 +116,7 @@ def _auto_fit_column_a(ws, start_row=1, end_row=None):
                 max_len = max(max_len, len(str(cell.value)))
             except:
                 pass
-    ws.column_dimensions["A"].width = min(max(max_len * 0.7 + 2, 8), 35)
+    ws.column_dimensions["A"].width = min(max(max_len * 0.7 + 2, 8), 50)
 
 
 def _disc_by_month(disciplinary_actions):
@@ -160,19 +124,18 @@ def _disc_by_month(disciplinary_actions):
     if disciplinary_actions is None:
         return result
     try:
-        if hasattr(disciplinary_actions, "empty") and disciplinary_actions.empty:
+        if getattr(disciplinary_actions, "empty", True):
             return result
-        if hasattr(disciplinary_actions, "iterrows"):
-            for _, row in disciplinary_actions.iterrows():
-                dd = str(row.get("action_date", "") or "")
-                if not dd:
-                    continue
-                try:
-                    mn = int(dd.split("-")[1])
-                    result.setdefault(mn, []).append(
-                        str(row.get("warning_type", "") or ""))
-                except Exception:
-                    pass
+        for _, row in disciplinary_actions.iterrows():
+            dd = str(row.get("action_date", "") or "")
+            if not dd:
+                continue
+            try:
+                mn = int(dd.split("-")[1])
+                result.setdefault(mn, []).append(
+                    str(row.get("warning_type", "") or ""))
+            except Exception:
+                pass
     except Exception:
         pass
     return result
@@ -181,6 +144,7 @@ def _disc_by_month(disciplinary_actions):
 def _att_by_month(attendance_data):
     """
     تحويل بيانات التأخير إلى قاموس لكل شهر
+    المتوقع: DataFrame يحتوي على أعمدة month, late_count, late_hours
     """
     result = {}
     result_hours = {}
@@ -230,6 +194,17 @@ def build_employee_sheet(
     ws = wb.create_sheet(safe)
     ws.sheet_view.rightToLeft = True
     ws.sheet_view.showGridLines = False
+
+    # إعداد عرض الأعمدة - إضافة عمود لساعات التأخير
+    col_cfg = {
+        "A": 5, "B": 26, "C": 16, "D": 13,
+        "E": 2, "F": 2,
+        "G": 10, "H": 11, "I": 14, "J": 14,
+        "K": 22, "L": 14, "M": 14, "N": 14,  # N لساعات التأخير
+        "O": 5,
+    }
+    for col, w in col_cfg.items():
+        ws.column_dimensions[col].width = w
 
     # معالجة البيانات
     m_train = {}
@@ -283,7 +258,7 @@ def build_employee_sheet(
         _sc(ws.cell(rr, 2, val), color="000000", bg=_INFO_BG, ah="right", brd=_TN)
 
     # ════════════════════════════════════════════════════════════
-    # ROW 3 — عنوان الجدول الشهري
+    # ROW 3 — عنوان الجدول الشهري (مضاف)
     # ════════════════════════════════════════════════════════════
     ws.row_dimensions[3].height = 18
     _mc(ws, 3, 7, 3, 14, "نتيجة التقييم الشهري",
@@ -306,7 +281,7 @@ def build_employee_sheet(
     # ROWS 5-16 — بيانات الأشهر الـ12 (تبدأ من الصف 5)
     # ════════════════════════════════════════════════════════════
     for month_idx, month_name in enumerate(_MONTHS_LIST, 1):
-        mr = 4 + month_idx
+        mr = 4 + month_idx  # يبدأ من الصف 5
         ws.row_dimensions[mr].height = 15
         rbg = LGRAY if month_idx % 2 == 0 else WHITE
 
@@ -357,7 +332,7 @@ def build_employee_sheet(
             ah="center", sz=8, brd=_TN)
 
     # ════════════════════════════════════════════════════════════
-    # ROW 17 — إجمالي الإجراءات والتأخير
+    # ROW 17 — إجمالي الإجراءات والتأخير (بعد الأشهر الـ12)
     # ════════════════════════════════════════════════════════════
     ws.row_dimensions[17].height = 15
     total_disc = sum(len(v) for v in disc_map.values())
@@ -374,7 +349,7 @@ def build_employee_sheet(
         bold=True, bg=_ATT_BG, ah="center", sz=8, brd=_TN)
 
     # ════════════════════════════════════════════════════════════
-    # ROW 10 — نتيجة التقييم السنوي
+    # ROW 10 — نتيجة التقييم السنوي (بجانب الجدول الشهري)
     # ════════════════════════════════════════════════════════════
     ws.row_dimensions[10].height = 17
     _mc(ws, 10, 1, 10, 2, "نتيجة التقييم السنوي",
@@ -460,7 +435,7 @@ def build_employee_sheet(
     r += 2
 
     # ════════════════════════════════════════════════════════════
-    # الإجراءات التأديبية المسجلة
+    # الإجراءات التأديبية المسجلة (أسفل مؤشرات الصفات الشخصية)
     # ════════════════════════════════════════════════════════════
     if disc_map:
         ws.row_dimensions[r].height = 14
@@ -489,7 +464,7 @@ def build_employee_sheet(
         r += 1
 
     # ════════════════════════════════════════════════════════════
-    # الالتزام بالدوام
+    # الالتزام بالدوام (أسفل الإجراءات التأديبية) - مع إجمالي الساعات
     # ════════════════════════════════════════════════════════════
     ws.row_dimensions[r].height = 14
     _mc(ws, r, 1, r, 4, "⏰ الالتزام بالدوام",
@@ -540,22 +515,8 @@ def build_employee_sheet(
     _sc(ws.cell(r, 2, "التوقيع: _______________"),
         bold=True, bg=LGRAY, ah="center", brd=_BK)
 
-    # ════════════════════════════════════════════════════════════
-    # ضبط عرض الأعمدة تلقائياً (Auto Width) - فقط للأعمدة G إلى O (7 إلى 15)
-    # ════════════════════════════════════════════════════════════
-    
-    # 1. تثبيت عرض العمود A
+    # ضبط عرض العمود A تلقائياً
     _auto_fit_column_a(ws, start_row=1, end_row=ws.max_row)
-    
-    # 2. ضبط عرض الأعمدة من G (7) إلى O (15) تلقائياً
-    _auto_fit_columns_range(ws, start_col=7, end_col=15, 
-                            start_row=1, end_row=ws.max_row,
-                            min_width=6, max_width=30)
-    
-    # 3. معالجة خاصة لعمود الملاحظات (K - عمود 11)
-    current_k_width = ws.column_dimensions["K"].width
-    if current_k_width is None or current_k_width < 22:
-        ws.column_dimensions["K"].width = 22
 
     # إعداد الطباعة
     ws.page_setup.orientation = "landscape"
@@ -586,8 +547,13 @@ def build_summary_sheet(
     ws.sheet_view.rightToLeft = True
     ws.sheet_view.showGridLines = False
 
-    for col in range(1, 11):
-        ws.column_dimensions[get_column_letter(col)].width = 12
+    col_cfg = {
+        "A": 4, "B": 30, "C": 14, "D": 8,
+        "E": 10, "F": 12, "G": 12,
+        "H": 14, "I": 14, "J": 14,  # إضافة عمود لساعات التأخير
+    }
+    for col, w in col_cfg.items():
+        ws.column_dimensions[col].width = w
 
     ws.row_dimensions[1].height = 32
     _mc(ws, 1, 1, 1, 10, title,
@@ -609,6 +575,7 @@ def build_summary_sheet(
 
     for i, row_data in enumerate(rows, 4):
         name, dept_, months, pct_val, verb_ = row_data[:5]
+        # إذا كان هناك بيانات إضافية للتأخير (اختياري)
         late_count = row_data[5] if len(row_data) > 5 else 0
         late_hours = row_data[6] if len(row_data) > 6 else 0.0
         
@@ -622,6 +589,7 @@ def build_summary_sheet(
         disc_info = disc_s.get(name, {})
         disc_cnt = disc_info.get("count", 0) if isinstance(disc_info, dict) else int(disc_info or 0)
         
+        # إذا لم يتم تمرير late_count في row_data، نستخدم من attendance_summary
         if late_count == 0 and att_s:
             att_info = att_s.get(name, {})
             if isinstance(att_info, dict):
@@ -668,24 +636,6 @@ def build_summary_sheet(
         ws.cell(last, c_idx).border = Border(
             left=b.left, right=b.right, top=b.top, bottom=thick_s)
 
-    # ضبط عرض الأعمدة
-    for col in range(1, 11):
-        max_len = 0
-        col_letter = get_column_letter(col)
-        for row in range(3, last + 1):
-            cell = ws.cell(row, col)
-            if cell.value:
-                try:
-                    text_len = len(str(cell.value))
-                    if any('\u0600' <= c <= '\u06FF' for c in str(cell.value)):
-                        text_len = int(text_len * 1.3)
-                    max_len = max(max_len, text_len)
-                except:
-                    pass
-        new_width = min(max(max_len + 2, 6), 35)
-        if new_width > 0:
-            ws.column_dimensions[col_letter].width = new_width
-
     ws.page_setup.orientation = "landscape"
     ws.page_setup.paperSize = 9
     ws.page_setup.fitToPage = True
@@ -700,7 +650,7 @@ def build_summary_sheet(
 
 
 # ═══════════════════════════════════════════════════════════════════
-# print_preview_html
+# print_preview_html (نسخة محسنة ومصححة بالكامل)
 # ═══════════════════════════════════════════════════════════════════
 def _rgb_to_hex(color_obj):
     try:
@@ -728,7 +678,12 @@ def print_preview_html(xlsx_buf, title="تقرير", chart_b64=""):
 
     CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
-* { box-sizing: border-box; margin: 0; padding: 0; }
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
 body {
     font-family: 'Cairo', Arial, sans-serif;
     direction: rtl;
@@ -736,6 +691,7 @@ body {
     padding: 16px;
     margin: 0;
 }
+
 .no-print {
     text-align: center;
     margin-bottom: 16px;
@@ -753,9 +709,14 @@ body {
     border-radius: 8px;
     cursor: pointer;
     font-size: 14px;
+    font-family: 'Cairo', Arial, sans-serif;
     font-weight: 700;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
-.no-print button:hover { background: #2E75B6; }
+.no-print button:hover {
+    background: #2E75B6;
+}
+
 .page {
     background: #fff;
     width: 290mm;
@@ -766,27 +727,56 @@ body {
     overflow-x: auto;
     direction: rtl;
 }
+
 table {
     border-collapse: collapse;
     width: 100%;
     font-size: 9pt;
     font-family: 'Cairo', Arial, sans-serif;
+    direction: rtl;
     margin: 4px 0;
-    table-layout: auto;
 }
+
 th, td {
     border: 0.5px solid #aaa;
-    padding: 4px 6px;
+    padding: 5px 8px;
     vertical-align: middle;
     text-align: center;
 }
+
 th {
     background: #1F3864;
     color: white;
     font-weight: bold;
     font-size: 9pt;
 }
-td { background: white; color: #333; }
+
+td {
+    background: white;
+    color: #333;
+}
+
+td:first-child {
+    text-align: center;
+    font-weight: bold;
+    background: #f0f2f5;
+}
+
+.rtl-text {
+    text-align: right;
+}
+
+.table-title {
+    background: #1F3864;
+    color: white;
+    padding: 8px 12px;
+    font-weight: bold;
+    font-size: 11pt;
+    margin-top: 16px;
+    margin-bottom: 4px;
+    border-radius: 4px;
+}
+
 .logo-header {
     display: flex;
     align-items: center;
@@ -796,18 +786,45 @@ td { background: white; color: #333; }
     margin-bottom: 12px;
     border-radius: 6px;
 }
-.logo-header span { color: white; font-size: 11pt; font-weight: bold; }
-.logo-header img { height: 44px; width: auto; object-fit: contain; }
+
+.logo-header span {
+    color: white;
+    font-size: 11pt;
+    font-weight: bold;
+}
+
+.logo-header img {
+    height: 44px;
+    width: auto;
+    object-fit: contain;
+}
+
 .info-grid {
     background: #EBF3FB;
     padding: 8px 12px;
     margin-bottom: 12px;
     border-radius: 6px;
     font-size: 9pt;
+    direction: rtl;
 }
-.info-row { display: flex; flex-wrap: wrap; margin-bottom: 4px; }
-.info-label { font-weight: bold; width: 100px; color: #1F3864; }
-.info-value { flex: 1; color: #333; }
+
+.info-row {
+    display: flex;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+
+.info-label {
+    font-weight: bold;
+    width: 100px;
+    color: #1F3864;
+}
+
+.info-value {
+    flex: 1;
+    color: #333;
+}
+
 .annual-result {
     background: #ED7D31;
     color: white;
@@ -818,10 +835,105 @@ td { background: white; color: #333; }
     font-weight: bold;
     font-size: 14pt;
 }
-.annual-result small { font-size: 9pt; display: block; }
+
+.annual-result small {
+    font-size: 9pt;
+    display: block;
+}
+
+.kpi-section {
+    margin: 12px 0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.kpi-header {
+    background: #2E75B6;
+    color: white;
+    padding: 6px 12px;
+    font-weight: bold;
+}
+
+.kpi-table {
+    width: 100%;
+    font-size: 8pt;
+}
+
+.kpi-table td, .kpi-table th {
+    padding: 4px 6px;
+}
+
+.disciplinary-section {
+    margin: 12px 0;
+    border: 1px solid #C00000;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.disciplinary-header {
+    background: #C00000;
+    color: white;
+    padding: 6px 12px;
+    font-weight: bold;
+}
+
+.attendance-section {
+    margin: 12px 0;
+    border: 1px solid #1F3864;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.attendance-header {
+    background: #1F3864;
+    color: white;
+    padding: 6px 12px;
+    font-weight: bold;
+}
+
+.attendance-grid {
+    display: flex;
+    background: #E0F2FE;
+    padding: 8px 12px;
+    gap: 24px;
+}
+
+.attendance-item {
+    flex: 1;
+    text-align: center;
+}
+
+.attendance-label {
+    font-weight: bold;
+    color: #1F3864;
+    font-size: 9pt;
+}
+
+.attendance-value {
+    font-size: 11pt;
+    font-weight: bold;
+    color: #15803d;
+}
+
+.signature {
+    margin-top: 20px;
+    padding-top: 12px;
+    border-top: 1px solid #ccc;
+    display: flex;
+    justify-content: space-between;
+    font-size: 9pt;
+}
+
 @media print {
-    body { background: white; padding: 0; margin: 0; }
-    .no-print { display: none !important; }
+    body {
+        background: white;
+        padding: 0;
+        margin: 0;
+    }
+    .no-print {
+        display: none !important;
+    }
     .page {
         box-shadow: none;
         padding: 5mm;
@@ -830,20 +942,27 @@ td { background: white; color: #333; }
         page-break-after: avoid;
         break-inside: avoid;
     }
-    th, td { border-color: #000 !important; }
+    th, td {
+        border-color: #000 !important;
+    }
     * {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
         color-adjust: exact !important;
     }
-    @page { size: A4 landscape; margin: 8mm; }
+    @page {
+        size: A4 landscape;
+        margin: 8mm;
+    }
 }
 """
 
     def parse_table_from_ws(ws):
+        """تحويل ورقة العمل إلى HTML"""
         if ws.max_row == 0:
             return ""
         
+        # جمع معلومات الدمج
         merged = {}
         skip = set()
         for m in ws.merged_cells.ranges:
@@ -853,13 +972,23 @@ td { background: white; color: #333; }
                     if (r2, c2) != (m.min_row, m.min_col):
                         skip.add((r2, c2))
         
+        # حساب عرض الأعمدة
+        col_widths = {}
+        for col_letter, cd in ws.column_dimensions.items():
+            try:
+                idx = column_index_from_string(col_letter)
+                col_widths[idx] = max(int((cd.width or 10) * 6), 40) if not cd.hidden else 0
+            except:
+                pass
+        
+        # بناء الجدول
         html = '<div style="overflow-x: auto;"><table style="table-layout: auto;">'
         html += '<colgroup>'
         max_col = ws.max_column
         for c in range(1, max_col + 1):
-            col_letter = get_column_letter(c)
-            width = ws.column_dimensions[col_letter].width or 10
-            html += f'<col style="min-width:{max(width * 5, 40)}px;">'
+            w = col_widths.get(c, 80)
+            if w > 0:
+                html += f'<col style="min-width:{w}px; max-width:{min(w, 200)}px;">'
         html += '</colgroup>'
         
         for r in range(1, ws.max_row + 1):
@@ -871,6 +1000,8 @@ td { background: white; color: #333; }
             html += f'<tr {height_style}>'
             
             for c in range(1, max_col + 1):
+                if col_widths.get(c, 0) == 0:
+                    continue
                 if (r, c) in skip:
                     continue
                 
@@ -880,12 +1011,14 @@ td { background: white; color: #333; }
                 
                 style = ""
                 
+                # تنسيق الخلفية
                 p = cell.fill
                 if p and p.fill_type == "solid":
                     bg = _rgb_to_hex(p.fgColor)
                     if bg and bg.lower() not in ("#000000", "#ffffff", ""):
                         style += f"background:{bg};"
                 
+                # تنسيق النص
                 f_obj = cell.font
                 if f_obj:
                     if f_obj.bold:
@@ -897,6 +1030,7 @@ td { background: white; color: #333; }
                     if fc and fc != "#000000":
                         style += f"color:{fc};"
                 
+                # محاذاة
                 a = cell.alignment
                 if a:
                     ha = "center"
@@ -916,6 +1050,7 @@ td { background: white; color: #333; }
                 
                 style += "padding:3px 5px;"
                 
+                # معالجة الدمج
                 span = ""
                 if (r, c) in merged:
                     rs2, cs2 = merged[(r, c)]
@@ -926,9 +1061,9 @@ td { background: white; color: #333; }
                 
                 html += f'<td style="{style}"{span}>{text}</td>'
             
-            html += '</tr>'
+            html += '<tr>'
         
-        html += '</td></div>'
+        html += '</table></div>'
         return html
     
     parts = [
@@ -949,10 +1084,23 @@ td { background: white; color: #333; }
         if ws.max_row == 0:
             continue
         
+        # إنشاء ترويسة HTML من البيانات الأولى في الورقة
+        logo_tag = ""
         header_text = _company_header()
+        
+        # محاولة استخراج اسم الموظف من الورقة
+        emp_name_display = sheet_name
+        try:
+            for r in range(2, min(ws.max_row, 10)):
+                if ws.cell(r, 1).value == "اسم الموظف" and ws.cell(r, 2).value:
+                    emp_name_display = str(ws.cell(r, 2).value)
+                    break
+        except:
+            pass
         
         parts.append(f'<div class="page">')
         
+        # الترويسة مع الشعار
         if _logo_b64:
             parts.append(f'''
             <div class="logo-header">
@@ -963,6 +1111,7 @@ td { background: white; color: #333; }
         else:
             parts.append(f'<div class="logo-header"><span>{header_text}</span></div>')
         
+        # معلومات الموظف (محاولة استخراجها من الصفوف الأولى)
         parts.append('<div class="info-grid">')
         try:
             for r in range(2, 9):
@@ -979,7 +1128,9 @@ td { background: white; color: #333; }
             pass
         parts.append('</div>')
         
+        # النتيجة السنوية
         try:
+            annual_cell = None
             for r in range(9, 12):
                 if ws.cell(r, 1).value == "نتيجة التقييم السنوي":
                     annual_val = ws.cell(r, 3).value or ws.cell(r, 4).value
@@ -989,10 +1140,11 @@ td { background: white; color: #333; }
         except:
             pass
         
+        # الجدول الرئيسي
         table_html = parse_table_from_ws(ws)
         parts.append(table_html)
         
-        parts.append('</div>')
+        parts.append('</div>')  # closing page
     
     parts.append("</body></html>")
     return "".join(parts)
