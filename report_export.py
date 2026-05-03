@@ -576,4 +576,555 @@ def build_summary_sheet(
         # إذا لم يتم تمرير late_count في row_data، نستخدم من attendance_summary
         if late_count == 0 and att_s:
             late_count = int(att_s.get(name, {}).get("count", 0) if isinstance(att_s.get(name), dict) else att_s.get(name, 0))
-            late_hours = float(att_s.get(name, {}).get("
+            late_hours = float(att_s.get(name, {}).get("hours", 0) if isinstance(att_s.get(name), dict) else 0.0)
+
+        disc_bg = _DISC_BG if disc_cnt > 0 else rbg
+        att_bg = _ATT_BG if late_count > 0 else rbg
+
+        _sc(ws.cell(i, 1, i - 3), sz=8, ah="center", bg=rbg, brd=INNER_B)
+        _sc(ws.cell(i, 2, name), sz=9, ah="right", bg=rbg, brd=INNER_B)
+        _sc(ws.cell(i, 3, dept_), sz=8, ah="center", bg=rbg, brd=INNER_B)
+        _sc(ws.cell(i, 4, year or ""), sz=9, ah="center", bg=rbg, brd=INNER_B)
+        _sc(ws.cell(i, 5, months), sz=9, ah="center", bg=rbg, brd=INNER_B)
+        _sc(ws.cell(i, 6, f"{pct_val:.1f}%"),
+            sz=10, bold=True, color=sc_c, ah="center", bg=vbg, brd=INNER_B)
+        _sc(ws.cell(i, 7, verb_),
+            sz=9, bold=True, color=sc_c, ah="center", bg=vbg, brd=INNER_B)
+        _sc(ws.cell(i, 8,
+                    f"{disc_cnt} إجراء" if disc_cnt > 0 else "—"),
+            sz=8, ah="center", bg=disc_bg, brd=INNER_B)
+        _sc(ws.cell(i, 9,
+                    f"{late_count} مرة" if late_count > 0 else "—"),
+            sz=8, ah="center", bg=att_bg, brd=INNER_B)
+        _sc(ws.cell(i, 10,
+                    f"{late_hours:.2f} ساعة" if late_hours > 0 else "—"),
+            sz=8, ah="center", bg=att_bg, brd=INNER_B)
+
+    last = 3 + len(rows)
+    thick_s = Side(style="medium", color="000000")
+    for rr in range(3, last + 1):
+        for c_idx in [1, 10]:
+            b = ws.cell(rr, c_idx).border
+            if c_idx == 1:
+                ws.cell(rr, c_idx).border = Border(
+                    left=thick_s, right=b.right, top=b.top, bottom=b.bottom)
+            else:
+                ws.cell(rr, c_idx).border = Border(
+                    left=b.left, right=thick_s, top=b.top, bottom=b.bottom)
+    for c_idx in range(1, 11):
+        b = ws.cell(last, c_idx).border
+        ws.cell(last, c_idx).border = Border(
+            left=b.left, right=b.right, top=b.top, bottom=thick_s)
+
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.paperSize = 9
+    ws.page_setup.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 1
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_margins = PageMargins(left=0.4, right=0.4, top=0.4, bottom=0.4)
+    ws.print_options.horizontalCentered = True
+    ws.print_options.verticalCentered = True
+
+    return ws
+
+
+# ═══════════════════════════════════════════════════════════════════
+# print_preview_html (نسخة محسنة ومصححة)
+# ═══════════════════════════════════════════════════════════════════
+def _rgb_to_hex(color_obj):
+    try:
+        if color_obj and color_obj.type == "rgb":
+            rgb = color_obj.rgb
+            return "#" + rgb[2:]
+    except Exception:
+        pass
+    return ""
+
+
+def print_preview_html(xlsx_buf, title="تقرير", chart_b64=""):
+    xlsx_buf.seek(0)
+    wb = openpyxl.load_workbook(xlsx_buf, data_only=True)
+
+    _logo_b64 = ""
+    for _lp in [LOGO_PATH, "logo.png"]:
+        if os.path.exists(_lp):
+            try:
+                with open(_lp, "rb") as _lf:
+                    _logo_b64 = base64.b64encode(_lf.read()).decode()
+            except Exception:
+                pass
+            break
+
+    CSS = """
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Cairo', Arial, sans-serif;
+    direction: rtl;
+    background: #dde1ea;
+    padding: 16px;
+    margin: 0;
+}
+
+.no-print {
+    text-align: center;
+    margin-bottom: 16px;
+    position: sticky;
+    top: 0;
+    background: #dde1ea;
+    padding: 8px;
+    z-index: 100;
+}
+.no-print button {
+    padding: 10px 36px;
+    background: #1F3864;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-family: 'Cairo', Arial, sans-serif;
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+.no-print button:hover {
+    background: #2E75B6;
+}
+
+.page {
+    background: #fff;
+    width: 290mm;
+    margin: 0 auto 20px;
+    padding: 8mm 10mm;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    border-radius: 4px;
+    overflow-x: auto;
+    direction: rtl;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 9pt;
+    font-family: 'Cairo', Arial, sans-serif;
+    direction: rtl;
+    margin: 4px 0;
+}
+
+th, td {
+    border: 0.5px solid #aaa;
+    padding: 5px 8px;
+    vertical-align: middle;
+    text-align: center;
+}
+
+th {
+    background: #1F3864;
+    color: white;
+    font-weight: bold;
+    font-size: 9pt;
+}
+
+td {
+    background: white;
+    color: #333;
+}
+
+td:first-child {
+    text-align: center;
+    font-weight: bold;
+    background: #f0f2f5;
+}
+
+.rtl-text {
+    text-align: right;
+}
+
+.table-title {
+    background: #1F3864;
+    color: white;
+    padding: 8px 12px;
+    font-weight: bold;
+    font-size: 11pt;
+    margin-top: 16px;
+    margin-bottom: 4px;
+    border-radius: 4px;
+}
+
+.logo-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #1F3864;
+    padding: 6px 16px;
+    margin-bottom: 12px;
+    border-radius: 6px;
+}
+
+.logo-header span {
+    color: white;
+    font-size: 11pt;
+    font-weight: bold;
+}
+
+.logo-header img {
+    height: 44px;
+    width: auto;
+    object-fit: contain;
+}
+
+.info-grid {
+    background: #EBF3FB;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    border-radius: 6px;
+    font-size: 9pt;
+    direction: rtl;
+}
+
+.info-row {
+    display: flex;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+
+.info-label {
+    font-weight: bold;
+    width: 100px;
+    color: #1F3864;
+}
+
+.info-value {
+    flex: 1;
+    color: #333;
+}
+
+.annual-result {
+    background: #ED7D31;
+    color: white;
+    padding: 10px;
+    text-align: center;
+    border-radius: 6px;
+    margin: 12px 0;
+    font-weight: bold;
+    font-size: 14pt;
+}
+
+.annual-result small {
+    font-size: 9pt;
+    display: block;
+}
+
+.kpi-section {
+    margin: 12px 0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.kpi-header {
+    background: #2E75B6;
+    color: white;
+    padding: 6px 12px;
+    font-weight: bold;
+}
+
+.kpi-table {
+    width: 100%;
+    font-size: 8pt;
+}
+
+.kpi-table td, .kpi-table th {
+    padding: 4px 6px;
+}
+
+.disciplinary-section {
+    margin: 12px 0;
+    border: 1px solid #C00000;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.disciplinary-header {
+    background: #C00000;
+    color: white;
+    padding: 6px 12px;
+    font-weight: bold;
+}
+
+.attendance-section {
+    margin: 12px 0;
+    border: 1px solid #1F3864;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.attendance-header {
+    background: #1F3864;
+    color: white;
+    padding: 6px 12px;
+    font-weight: bold;
+}
+
+.attendance-grid {
+    display: flex;
+    background: #E0F2FE;
+    padding: 8px 12px;
+    gap: 24px;
+}
+
+.attendance-item {
+    flex: 1;
+    text-align: center;
+}
+
+.attendance-label {
+    font-weight: bold;
+    color: #1F3864;
+    font-size: 9pt;
+}
+
+.attendance-value {
+    font-size: 11pt;
+    font-weight: bold;
+    color: #15803d;
+}
+
+.signature {
+    margin-top: 20px;
+    padding-top: 12px;
+    border-top: 1px solid #ccc;
+    display: flex;
+    justify-content: space-between;
+    font-size: 9pt;
+}
+
+@media print {
+    body {
+        background: white;
+        padding: 0;
+        margin: 0;
+    }
+    .no-print {
+        display: none !important;
+    }
+    .page {
+        box-shadow: none;
+        padding: 5mm;
+        margin: 0;
+        width: 100%;
+        page-break-after: avoid;
+        break-inside: avoid;
+    }
+    th, td {
+        border-color: #000 !important;
+    }
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+    }
+    @page {
+        size: A4 landscape;
+        margin: 8mm;
+    }
+}
+"""
+
+    def parse_table_from_ws(ws):
+        """تحويل ورقة العمل إلى HTML"""
+        if ws.max_row == 0:
+            return ""
+        
+        # جمع معلومات الدمج
+        merged = {}
+        skip = set()
+        for m in ws.merged_cells.ranges:
+            merged[(m.min_row, m.min_col)] = (m.max_row - m.min_row + 1, m.max_col - m.min_col + 1)
+            for r2 in range(m.min_row, m.max_row + 1):
+                for c2 in range(m.min_col, m.max_col + 1):
+                    if (r2, c2) != (m.min_row, m.min_col):
+                        skip.add((r2, c2))
+        
+        # حساب عرض الأعمدة
+        col_widths = {}
+        for col_letter, cd in ws.column_dimensions.items():
+            try:
+                idx = column_index_from_string(col_letter)
+                col_widths[idx] = max(int((cd.width or 10) * 6), 40) if not cd.hidden else 0
+            except:
+                pass
+        
+        # بناء الجدول
+        html = '<div style="overflow-x: auto;"><table style="table-layout: auto;">'
+        html += '<colgroup>'
+        max_col = ws.max_column
+        for c in range(1, max_col + 1):
+            w = col_widths.get(c, 80)
+            if w > 0:
+                html += f'<col style="min-width:{w}px; max-width:{min(w, 200)}px;">'
+        html += '</colgroup>'
+        
+        for r in range(1, ws.max_row + 1):
+            if all((r, c) in skip for c in range(1, max_col + 1)):
+                continue
+            
+            row_height = ws.row_dimensions[r].height if r in ws.row_dimensions else None
+            height_style = f'style="height:{max(int(row_height * 0.9), 18)}px;"' if row_height else ''
+            html += f'<tr {height_style}>'
+            
+            for c in range(1, max_col + 1):
+                if col_widths.get(c, 0) == 0 and c not in [7, 8, 9, 10, 11, 12, 13, 14]:
+                    continue
+                if (r, c) in skip:
+                    continue
+                
+                cell = ws.cell(r, c)
+                val = cell.value
+                text = "" if val is None else str(val).replace("\n", "<br>")
+                
+                style = ""
+                
+                # تنسيق الخلفية
+                p = cell.fill
+                if p and p.fill_type == "solid":
+                    bg = _rgb_to_hex(p.fgColor)
+                    if bg and bg.lower() not in ("#000000", "#ffffff", ""):
+                        style += f"background:{bg};"
+                
+                # تنسيق النص
+                f_obj = cell.font
+                if f_obj:
+                    if f_obj.bold:
+                        style += "font-weight:bold;"
+                    sz = f_obj.size
+                    if sz:
+                        style += f"font-size:{min(sz, 10)}pt;"
+                    fc = _rgb_to_hex(f_obj.color)
+                    if fc and fc != "#000000":
+                        style += f"color:{fc};"
+                
+                # محاذاة
+                a = cell.alignment
+                if a:
+                    ha = "center"
+                    if a.horizontal == "right":
+                        ha = "right"
+                    elif a.horizontal == "left":
+                        ha = "left"
+                    style += f"text-align:{ha};"
+                    va = "middle"
+                    if a.vertical == "top":
+                        va = "top"
+                    elif a.vertical == "bottom":
+                        va = "bottom"
+                    style += f"vertical-align:{va};"
+                    if a.wrapText:
+                        style += "white-space:normal;word-break:break-word;"
+                
+                style += "padding:3px 5px;"
+                
+                # معالجة الدمج
+                span = ""
+                if (r, c) in merged:
+                    rs2, cs2 = merged[(r, c)]
+                    if rs2 > 1:
+                        span += f' rowspan="{rs2}"'
+                    if cs2 > 1:
+                        span += f' colspan="{cs2}"'
+                
+                html += f'<td style="{style}"{span}>{text}</td>'
+            
+            html += '</tr>'
+        
+        html += '</table></div>'
+        return html
+    
+    parts = [
+        "<!DOCTYPE html>",
+        '<html dir="rtl" lang="ar">',
+        "<head>",
+        '<meta charset="utf-8">',
+        f"<title>{title}</title>",
+        f"<style>{CSS}</style>",
+        "</head><body>",
+        '<div class="no-print">',
+        f'<button onclick="window.print()">🖨️ {title} — طباعة</button>',
+        "</div>",
+    ]
+    
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        if ws.max_row == 0:
+            continue
+        
+        # إنشاء ترويسة HTML من البيانات الأولى في الورقة
+        logo_tag = ""
+        header_text = _company_header()
+        
+        # محاولة استخراج اسم الموظف من الورقة
+        emp_name_display = sheet_name
+        try:
+            for r in range(2, min(ws.max_row, 10)):
+                if ws.cell(r, 1).value == "اسم الموظف" and ws.cell(r, 2).value:
+                    emp_name_display = str(ws.cell(r, 2).value)
+                    break
+        except:
+            pass
+        
+        parts.append(f'<div class="page">')
+        
+        # الترويسة مع الشعار
+        if _logo_b64:
+            parts.append(f'''
+            <div class="logo-header">
+                <span>{header_text}</span>
+                <img src="data:image/png;base64,{_logo_b64}" alt="شعار الشركة">
+            </div>
+            ''')
+        else:
+            parts.append(f'<div class="logo-header"><span>{header_text}</span></div>')
+        
+        # معلومات الموظف (محاولة استخراجها من الصفوف الأولى)
+        parts.append('<div class="info-grid">')
+        try:
+            for r in range(2, 9):
+                label = ws.cell(r, 1).value
+                value = ws.cell(r, 2).value
+                if label and value and str(label).strip() not in ("", "نتيجة التقييم السنوي"):
+                    parts.append(f'''
+                    <div class="info-row">
+                        <span class="info-label">{label}:</span>
+                        <span class="info-value">{value}</span>
+                    </div>
+                    ''')
+        except:
+            pass
+        parts.append('</div>')
+        
+        # النتيجة السنوية
+        try:
+            annual_cell = None
+            for r in range(9, 12):
+                if ws.cell(r, 1).value == "نتيجة التقييم السنوي":
+                    annual_val = ws.cell(r, 3).value or ws.cell(r, 4).value
+                    if annual_val:
+                        parts.append(f'<div class="annual-result"><small>النتيجة النهائية السنوية</small><br>{annual_val}</div>')
+                        break
+        except:
+            pass
+        
+        # الجدول الرئيسي
+        table_html = parse_table_from_ws(ws)
+        parts.append(table_html)
+        
+        parts.append('</div>')  # closing page
+    
+    parts.append("</body></html>")
+    return "".join(parts)
