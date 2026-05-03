@@ -120,22 +120,50 @@ def _auto_fit_column_a(ws, start_row=1, end_row=None):
 
 
 def _disc_by_month(disciplinary_actions):
+    """
+    تحويل الإجراءات التأديبية إلى قاموس حسب الشهر
+    المتوقع: DataFrame يحتوي على أعمدة action_date, warning_type
+    """
     result = {}
     if disciplinary_actions is None:
         return result
     try:
-        if getattr(disciplinary_actions, "empty", True):
+        # التحقق من أن disciplinary_actions ليس فارغاً
+        if hasattr(disciplinary_actions, "empty") and disciplinary_actions.empty:
             return result
-        for _, row in disciplinary_actions.iterrows():
-            dd = str(row.get("action_date", "") or "")
-            if not dd:
-                continue
-            try:
-                mn = int(dd.split("-")[1])
-                result.setdefault(mn, []).append(
-                    str(row.get("warning_type", "") or ""))
-            except Exception:
-                pass
+        if hasattr(disciplinary_actions, "iterrows"):
+            for _, row in disciplinary_actions.iterrows():
+                dd = str(row.get("action_date", "") or "")
+                if not dd:
+                    continue
+                try:
+                    # استخراج الشهر من التاريخ (YYYY-MM-DD)
+                    mn = int(dd.split("-")[1])
+                    warning_type = str(row.get("warning_type", "") or "")
+                    reason = str(row.get("reason", "") or "")
+                    # نضيف نوع الإنذار + السبب في النص
+                    full_text = warning_type
+                    if reason and reason not in ("", "nan", "None"):
+                        full_text += f" - {reason}"
+                    result.setdefault(mn, []).append(full_text)
+                except Exception:
+                    pass
+        # إذا كان disciplinary_actions قائمة (list)
+        elif isinstance(disciplinary_actions, list):
+            for item in disciplinary_actions:
+                dd = str(item.get("action_date", "") or "")
+                if not dd:
+                    continue
+                try:
+                    mn = int(dd.split("-")[1])
+                    warning_type = str(item.get("warning_type", "") or "")
+                    reason = str(item.get("reason", "") or "")
+                    full_text = warning_type
+                    if reason and reason not in ("", "nan", "None"):
+                        full_text += f" - {reason}"
+                    result.setdefault(mn, []).append(full_text)
+                except:
+                    pass
     except Exception:
         pass
     return result
@@ -195,12 +223,12 @@ def build_employee_sheet(
     ws.sheet_view.rightToLeft = True
     ws.sheet_view.showGridLines = False
 
-    # إعداد عرض الأعمدة - إضافة عمود لساعات التأخير
+    # إعداد عرض الأعمدة
     col_cfg = {
         "A": 5, "B": 26, "C": 16, "D": 13,
         "E": 2, "F": 2,
         "G": 10, "H": 11, "I": 14, "J": 14,
-        "K": 22, "L": 14, "M": 14, "N": 14,  # N لساعات التأخير
+        "K": 22, "L": 14, "M": 14, "N": 14,
         "O": 5,
     }
     for col, w in col_cfg.items():
@@ -258,7 +286,7 @@ def build_employee_sheet(
         _sc(ws.cell(rr, 2, val), color="000000", bg=_INFO_BG, ah="right", brd=_TN)
 
     # ════════════════════════════════════════════════════════════
-    # ROW 3 — عنوان الجدول الشهري (مضاف)
+    # ROW 3 — عنوان الجدول الشهري
     # ════════════════════════════════════════════════════════════
     ws.row_dimensions[3].height = 18
     _mc(ws, 3, 7, 3, 14, "نتيجة التقييم الشهري",
@@ -281,7 +309,7 @@ def build_employee_sheet(
     # ROWS 5-16 — بيانات الأشهر الـ12 (تبدأ من الصف 5)
     # ════════════════════════════════════════════════════════════
     for month_idx, month_name in enumerate(_MONTHS_LIST, 1):
-        mr = 4 + month_idx  # يبدأ من الصف 5
+        mr = 4 + month_idx
         ws.row_dimensions[mr].height = 15
         rbg = LGRAY if month_idx % 2 == 0 else WHITE
 
@@ -332,7 +360,7 @@ def build_employee_sheet(
             ah="center", sz=8, brd=_TN)
 
     # ════════════════════════════════════════════════════════════
-    # ROW 17 — إجمالي الإجراءات والتأخير (بعد الأشهر الـ12)
+    # ROW 17 — إجمالي الإجراءات والتأخير
     # ════════════════════════════════════════════════════════════
     ws.row_dimensions[17].height = 15
     total_disc = sum(len(v) for v in disc_map.values())
@@ -349,7 +377,7 @@ def build_employee_sheet(
         bold=True, bg=_ATT_BG, ah="center", sz=8, brd=_TN)
 
     # ════════════════════════════════════════════════════════════
-    # ROW 10 — نتيجة التقييم السنوي (بجانب الجدول الشهري)
+    # ROW 10 — نتيجة التقييم السنوي
     # ════════════════════════════════════════════════════════════
     ws.row_dimensions[10].height = 17
     _mc(ws, 10, 1, 10, 2, "نتيجة التقييم السنوي",
@@ -374,7 +402,7 @@ def build_employee_sheet(
     for i, (kname, weight, grade) in enumerate(job_kpis):
         rbg = LGRAY if i % 2 == 0 else WHITE
         w, g = float(weight), float(grade)
-        pct_val = round(kpi_score_to_pct(g, w), 1)
+        pct_val = round(g, 1)  # grade هي النسبة المئوية بالفعل من get_kpi_avgs
         lbl = rating_label(pct_val)
         job_total_score += g
         job_total_weight += w
@@ -389,7 +417,7 @@ def build_employee_sheet(
         r += 1
 
     ws.row_dimensions[r].height = 14
-    jp = round(kpi_score_to_pct(job_total_score, job_total_weight), 1) if job_total_weight > 0 else 0
+    jp = round(job_total_score, 1)
     _sc(ws.cell(r, 1, "مجموع الأداء الوظيفي"), bold=True, color="FFFFFF", bg=MID, ah="right", brd=_TN)
     _sc(ws.cell(r, 2, f"{job_total_weight:.1f}%"), bold=True, color="FFFFFF", bg=MID, ah="center", brd=_TN)
     _sc(ws.cell(r, 3, f"{jp}%"), bold=True, color="FFFFFF", bg=MID, ah="center", brd=_TN)
@@ -412,7 +440,7 @@ def build_employee_sheet(
     for i, (kname, weight, grade) in enumerate(per_kpis):
         rbg = _WARM if i % 2 == 0 else WHITE
         w, g = float(weight), float(grade)
-        pct_val = round(kpi_score_to_pct(g, w), 1)
+        pct_val = round(g, 1)
         lbl = rating_label(pct_val)
         per_total_score += g
         per_total_weight += w
@@ -427,7 +455,7 @@ def build_employee_sheet(
         r += 1
 
     ws.row_dimensions[r].height = 14
-    pp = round(kpi_score_to_pct(per_total_score, per_total_weight), 1) if per_total_weight > 0 else 0
+    pp = round(per_total_score, 1)
     _sc(ws.cell(r, 1, "مجموع الصفات الشخصية"), bold=True, color="FFFFFF", bg=ORANGE, ah="right", brd=_TN)
     _sc(ws.cell(r, 2, f"{per_total_weight:.1f}%"), bold=True, color="FFFFFF", bg=ORANGE, ah="center", brd=_TN)
     _sc(ws.cell(r, 3, f"{pp}%"), bold=True, color="FFFFFF", bg=ORANGE, ah="center", brd=_TN)
@@ -435,7 +463,7 @@ def build_employee_sheet(
     r += 2
 
     # ════════════════════════════════════════════════════════════
-    # الإجراءات التأديبية المسجلة (أسفل مؤشرات الصفات الشخصية)
+    # الإجراءات التأديبية المسجلة
     # ════════════════════════════════════════════════════════════
     if disc_map:
         ws.row_dimensions[r].height = 14
@@ -464,7 +492,7 @@ def build_employee_sheet(
         r += 1
 
     # ════════════════════════════════════════════════════════════
-    # الالتزام بالدوام (أسفل الإجراءات التأديبية) - مع إجمالي الساعات
+    # الالتزام بالدوام
     # ════════════════════════════════════════════════════════════
     ws.row_dimensions[r].height = 14
     _mc(ws, r, 1, r, 4, "⏰ الالتزام بالدوام",
@@ -550,7 +578,7 @@ def build_summary_sheet(
     col_cfg = {
         "A": 4, "B": 30, "C": 14, "D": 8,
         "E": 10, "F": 12, "G": 12,
-        "H": 14, "I": 14, "J": 14,  # إضافة عمود لساعات التأخير
+        "H": 14, "I": 14, "J": 14,
     }
     for col, w in col_cfg.items():
         ws.column_dimensions[col].width = w
@@ -575,7 +603,6 @@ def build_summary_sheet(
 
     for i, row_data in enumerate(rows, 4):
         name, dept_, months, pct_val, verb_ = row_data[:5]
-        # إذا كان هناك بيانات إضافية للتأخير (اختياري)
         late_count = row_data[5] if len(row_data) > 5 else 0
         late_hours = row_data[6] if len(row_data) > 6 else 0.0
         
@@ -589,7 +616,6 @@ def build_summary_sheet(
         disc_info = disc_s.get(name, {})
         disc_cnt = disc_info.get("count", 0) if isinstance(disc_info, dict) else int(disc_info or 0)
         
-        # إذا لم يتم تمرير late_count في row_data، نستخدم من attendance_summary
         if late_count == 0 and att_s:
             att_info = att_s.get(name, {})
             if isinstance(att_info, dict):
@@ -650,7 +676,7 @@ def build_summary_sheet(
 
 
 # ═══════════════════════════════════════════════════════════════════
-# print_preview_html (نسخة محسنة ومصححة بالكامل)
+# print_preview_html
 # ═══════════════════════════════════════════════════════════════════
 def _rgb_to_hex(color_obj):
     try:
@@ -962,7 +988,6 @@ td:first-child {
         if ws.max_row == 0:
             return ""
         
-        # جمع معلومات الدمج
         merged = {}
         skip = set()
         for m in ws.merged_cells.ranges:
@@ -972,7 +997,6 @@ td:first-child {
                     if (r2, c2) != (m.min_row, m.min_col):
                         skip.add((r2, c2))
         
-        # حساب عرض الأعمدة
         col_widths = {}
         for col_letter, cd in ws.column_dimensions.items():
             try:
@@ -981,7 +1005,6 @@ td:first-child {
             except:
                 pass
         
-        # بناء الجدول
         html = '<div style="overflow-x: auto;"><table style="table-layout: auto;">'
         html += '<colgroup>'
         max_col = ws.max_column
@@ -1011,14 +1034,12 @@ td:first-child {
                 
                 style = ""
                 
-                # تنسيق الخلفية
                 p = cell.fill
                 if p and p.fill_type == "solid":
                     bg = _rgb_to_hex(p.fgColor)
                     if bg and bg.lower() not in ("#000000", "#ffffff", ""):
                         style += f"background:{bg};"
                 
-                # تنسيق النص
                 f_obj = cell.font
                 if f_obj:
                     if f_obj.bold:
@@ -1030,7 +1051,6 @@ td:first-child {
                     if fc and fc != "#000000":
                         style += f"color:{fc};"
                 
-                # محاذاة
                 a = cell.alignment
                 if a:
                     ha = "center"
@@ -1050,7 +1070,6 @@ td:first-child {
                 
                 style += "padding:3px 5px;"
                 
-                # معالجة الدمج
                 span = ""
                 if (r, c) in merged:
                     rs2, cs2 = merged[(r, c)]
@@ -1061,7 +1080,7 @@ td:first-child {
                 
                 html += f'<td style="{style}"{span}>{text}</td>'
             
-            html += '<tr>'
+            html += '</tr>'
         
         html += '</table></div>'
         return html
@@ -1084,23 +1103,10 @@ td:first-child {
         if ws.max_row == 0:
             continue
         
-        # إنشاء ترويسة HTML من البيانات الأولى في الورقة
-        logo_tag = ""
         header_text = _company_header()
-        
-        # محاولة استخراج اسم الموظف من الورقة
-        emp_name_display = sheet_name
-        try:
-            for r in range(2, min(ws.max_row, 10)):
-                if ws.cell(r, 1).value == "اسم الموظف" and ws.cell(r, 2).value:
-                    emp_name_display = str(ws.cell(r, 2).value)
-                    break
-        except:
-            pass
         
         parts.append(f'<div class="page">')
         
-        # الترويسة مع الشعار
         if _logo_b64:
             parts.append(f'''
             <div class="logo-header">
@@ -1111,7 +1117,6 @@ td:first-child {
         else:
             parts.append(f'<div class="logo-header"><span>{header_text}</span></div>')
         
-        # معلومات الموظف (محاولة استخراجها من الصفوف الأولى)
         parts.append('<div class="info-grid">')
         try:
             for r in range(2, 9):
@@ -1128,9 +1133,7 @@ td:first-child {
             pass
         parts.append('</div>')
         
-        # النتيجة السنوية
         try:
-            annual_cell = None
             for r in range(9, 12):
                 if ws.cell(r, 1).value == "نتيجة التقييم السنوي":
                     annual_val = ws.cell(r, 3).value or ws.cell(r, 4).value
@@ -1140,11 +1143,10 @@ td:first-child {
         except:
             pass
         
-        # الجدول الرئيسي
         table_html = parse_table_from_ws(ws)
         parts.append(table_html)
         
-        parts.append('</div>')  # closing page
+        parts.append('</div>')
     
     parts.append("</body></html>")
     return "".join(parts)
