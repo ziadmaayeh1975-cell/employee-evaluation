@@ -9,7 +9,13 @@ from data_loader import get_emp_notes
 from auth import get_current_reviewer, get_current_role
 from report_export import build_employee_sheet, build_summary_sheet, print_preview_html
 
-# استيراد نظام الالتزام بالدوام
+# استيراد نظام الإجراءات التأديبية والالتزام بالدوام
+try:
+    from disciplinary_manager import get_actions_by_employee
+    DISCIPLINARY_AVAILABLE = True
+except ImportError:
+    DISCIPLINARY_AVAILABLE = False
+
 try:
     from attendance_manager import get_employee_attendance_summary
     ATTENDANCE_AVAILABLE = True
@@ -147,6 +153,16 @@ def render_department_report(df_emp, df_kpi, df_data):
             except:
                 pass
         
+        # جلب الإجراءات التأديبية للموظف
+        disciplinary_df = None
+        if DISCIPLINARY_AVAILABLE:
+            try:
+                disc_actions_list = get_actions_by_employee(emp, sel3_year)
+                if disc_actions_list:
+                    disciplinary_df = pd.DataFrame(disc_actions_list)
+            except Exception as e:
+                pass
+        
         summary3.append({
             "emp": emp, 
             "dept": d3,
@@ -156,7 +172,8 @@ def render_department_report(df_emp, df_kpi, df_data):
             "emp_id": emp_id,
             "attendance_count": attendance_count,
             "attendance_hours": attendance_hours,
-            "attendance_monthly": attendance_monthly  # إضافة البيانات الشهرية
+            "attendance_monthly": attendance_monthly,
+            "disciplinary_df": disciplinary_df
         })
     summary3.sort(key=lambda x: x["pct"], reverse=True)
 
@@ -220,11 +237,13 @@ def render_department_report(df_emp, df_kpi, df_data):
                     "total_late_hours": s["attendance_hours"]
                 }])
         
+        # تمرير الإجراءات التأديبية إلى build_employee_sheet
         build_employee_sheet(
             wb3, s["emp"], job3, d3, m3, sel3_year,
             kpis3, ms3, emp_notes, emp_train,
             employee_id=s["emp_id"],
-            attendance_data=attendance_export
+            attendance_data=attendance_export,
+            disciplinary_actions=s.get("disciplinary_df")
         )
 
     period_label = "، ".join(sel3_months) if sel3_months else "كل الأشهر"
