@@ -27,10 +27,15 @@ def rating_label_color(label: str) -> str:
     }.get(label, "#374151")
 
 def calc_kpi_score(pct_value: float, weight: float) -> float:
-    v = max(0.0, min(float(weight), float(pct_value)))
+    """
+    الدرجة الفعلية = (النسبة المدخلة / 100) * الوزن
+    مثال: نسبة 85% ووزن 10 → درجة فعلية 8.5
+    """
+    v = max(0.0, min(float(weight), (float(pct_value) / 100.0) * float(weight)))
     return round(v, 2)
 
 def kpi_score_to_pct(kpi_score: float, weight: float) -> float:
+    """تحويل الدرجة الفعلية إلى نسبة مئوية 0-100"""
     if weight == 0: return 0.0
     return round((float(kpi_score) / float(weight)) * 100.0, 1)
 
@@ -55,7 +60,11 @@ def calc_monthly(df_data, emp, month_en, year=None):
     mask = (df_data["EmployeeName"] == emp) & (df_data["Month"] == month_en)
     if year: mask = mask & (df_data["Year"] == int(year))
     s = df_data[mask]
-    return s["KPI_%"].sum() / 100.0 if not s.empty else 0.0
+    if s.empty:
+        return 0.0
+    # مجموع الدرجات الفعلية مقسوم على 100 ليعطي نسبة 0-1
+    total_score = s["KPI_%"].sum()
+    return total_score / 100.0
 
 def calc_monthly_personal(df_data, emp, month_en, year=None):
     mask = (df_data["EmployeeName"] == emp) & (df_data["Month"] == month_en)
@@ -78,7 +87,7 @@ def get_kpi_avgs(df_data, df_kpi, emp, job, months_filter=None, year=None):
     """
     ترجع قائمة من dicts تحتوي على:
       - KPI_Name  : اسم المؤشر
-      - Weight    : الوزن الأصلي من قاعدة البيانات
+      - Weight    : الوزن الأصلي (من 0 إلى 80 للوظيفي أو 0-20 للشخصي)
       - avg_score : متوسط الدرجة كنسبة مئوية 0-100
     """
     result = []
@@ -117,7 +126,7 @@ def get_kpi_avgs(df_data, df_kpi, emp, job, months_filter=None, year=None):
             sub = sub[sub["Year"] == int(year)]
         
         if not sub.empty:
-            # KPI_% هي الدرجة الفعلية (من 0 إلى الوزن)
+            # KPI_% هي الدرجة الفعلية (مثال: إذا كان الوزن 10 والدرجة 8.5)
             avg_kpi_score = sub["KPI_%"].mean()
             if weight > 0:
                 # تحويل إلى نسبة مئوية 0-100
@@ -130,7 +139,7 @@ def get_kpi_avgs(df_data, df_kpi, emp, job, months_filter=None, year=None):
         result.append({
             "KPI_Name":  kname_str,
             "Weight":    weight,
-            "avg_score": avg_percentage,
+            "avg_score": avg_percentage,  # نسبة من 0-100
         })
     
     return result
