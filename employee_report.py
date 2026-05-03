@@ -215,13 +215,7 @@ def render_employee_report(df_emp, df_kpi, df_data):
             pass
 
     # ── ATTENDANCE: collect per-month for granular display & export ───────────
-    # FIX: loop month-by-month so we get a breakdown instead of one aggregate row.
-    # This populates:
-    #   attendance_monthly_rows → list of {month, late_count, late_hours}  (for export)
-    #   att_cnt_by_month        → {month_num: count}   (for monthly table display)
-    #   att_hrs_by_month        → {month_num: hours}   (for monthly table display)
-    #   attendance_count        → annual total count
-    #   attendance_hours        → annual total hours
+    # جمع بيانات التأخير لكل شهر على حدة (عدد المرات + عدد الساعات)
     attendance_monthly_rows = []
     att_cnt_by_month        = {}
     att_hrs_by_month        = {}
@@ -247,16 +241,16 @@ def render_employee_report(df_emp, df_kpi, df_data):
         except:
             pass
 
-    # Build the DataFrame passed to build_employee_sheet:
-    # - If we have per-month rows → pass them (enables monthly column in Excel/HTML)
-    # - Fallback: single aggregate row (still shows totals in summary section)
+    # بناء DataFrame للتصدير - يحتوي على كل شهر على حدة
     if attendance_monthly_rows:
+        # تمرير جميع الأشهر التي بها تأخير
         attendance_export = pd.DataFrame(attendance_monthly_rows)
     elif attendance_count > 0 or attendance_hours > 0:
+        # إذا كان هناك تأخير إجمالي ولكن بدون تفصيل شهري
         attendance_export = pd.DataFrame([{
-            "late_count":       attendance_count,
-            "late_hours":       attendance_hours,
-            "total_late_hours": attendance_hours,   # accepted by both old & new report_export
+            "month": 0,
+            "late_count": attendance_count,
+            "late_hours": attendance_hours,
         }])
     else:
         attendance_export = None
@@ -310,7 +304,6 @@ def render_employee_report(df_emp, df_kpi, df_data):
 
     if done2:
         # ── Monthly evaluation table ──────────────────────────────────────────
-        # FIX: added "عدد التأخيرات" and "ساعات التأخير" columns using per-month data
         st.markdown("### 📅 نتيجة التقييم الشهري")
 
         monthly_table_data = []
@@ -325,8 +318,8 @@ def render_employee_report(df_emp, df_kpi, df_data):
                     "التقييم اللفظي": verbal_grade(score * 100),
                     "تاريخ التقييم":  ev_date if ev_date else "—",
                     "ملاحظات المقيم": note    if note    else "—",
-                    "عدد التأخيرات":  str(int(late_cnt)) if late_cnt > 0 else "—",
-                    "ساعات التأخير":  f"{late_hrs:.2f}"  if late_hrs > 0 else "—",
+                    "عدد مرات التأخير":  str(int(late_cnt)) if late_cnt > 0 else "0",
+                    "ساعات التأخير":  f"{late_hrs:.2f}" if late_hrs > 0 else "0.00",
                 })
             else:
                 monthly_table_data.append({
@@ -335,8 +328,8 @@ def render_employee_report(df_emp, df_kpi, df_data):
                     "التقييم اللفظي": "—",
                     "تاريخ التقييم":  "—",
                     "ملاحظات المقيم": "—",
-                    "عدد التأخيرات":  str(int(late_cnt)) if late_cnt > 0 else "—",
-                    "ساعات التأخير":  f"{late_hrs:.2f}"  if late_hrs > 0 else "—",
+                    "عدد مرات التأخير":  str(int(late_cnt)) if late_cnt > 0 else "0",
+                    "ساعات التأخير":  f"{late_hrs:.2f}" if late_hrs > 0 else "0.00",
                 })
 
         st.dataframe(
@@ -349,7 +342,7 @@ def render_employee_report(df_emp, df_kpi, df_data):
                 "التقييم اللفظي": st.column_config.TextColumn("التقييم",        width="medium"),
                 "تاريخ التقييم":  st.column_config.TextColumn("تاريخ التقييم",  width="medium"),
                 "ملاحظات المقيم": st.column_config.TextColumn("ملاحظات المقيم", width="large"),
-                "عدد التأخيرات":  st.column_config.TextColumn("عدد التأخيرات",  width="small"),
+                "عدد مرات التأخير":  st.column_config.TextColumn("عدد مرات التأخير",  width="small"),
                 "ساعات التأخير":  st.column_config.TextColumn("ساعات التأخير",  width="small"),
             }
         )
@@ -400,7 +393,6 @@ def render_employee_report(df_emp, df_kpi, df_data):
                 st.dataframe(disc_display[available_cols], use_container_width=True, hide_index=True)
 
         # ── Attendance summary ────────────────────────────────────────────────
-        # FIX: always show this section (even if 0) so the user can see the status
         st.subheader("⏰ الالتزام بالدوام")
         att_col1, att_col2 = st.columns(2)
         with att_col1:
@@ -450,7 +442,6 @@ def render_employee_report(df_emp, df_kpi, df_data):
         for k, w, g in job_kpis2 + pers_kpis2
     ]
 
-    # FIX: pass per-month attendance_export so Excel/HTML show monthly breakdown
     build_employee_sheet(
         wb, sel2, job2, dept2, mgr2, sel2_year,
         kpis_export, monthly_rep, notes2, training2,
