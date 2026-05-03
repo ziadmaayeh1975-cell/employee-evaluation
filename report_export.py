@@ -160,18 +160,19 @@ def _disc_by_month(disciplinary_actions):
     if disciplinary_actions is None:
         return result
     try:
-        if getattr(disciplinary_actions, "empty", True):
+        if hasattr(disciplinary_actions, "empty") and disciplinary_actions.empty:
             return result
-        for _, row in disciplinary_actions.iterrows():
-            dd = str(row.get("action_date", "") or "")
-            if not dd:
-                continue
-            try:
-                mn = int(dd.split("-")[1])
-                result.setdefault(mn, []).append(
-                    str(row.get("warning_type", "") or ""))
-            except Exception:
-                pass
+        if hasattr(disciplinary_actions, "iterrows"):
+            for _, row in disciplinary_actions.iterrows():
+                dd = str(row.get("action_date", "") or "")
+                if not dd:
+                    continue
+                try:
+                    mn = int(dd.split("-")[1])
+                    result.setdefault(mn, []).append(
+                        str(row.get("warning_type", "") or ""))
+                except Exception:
+                    pass
     except Exception:
         pass
     return result
@@ -541,31 +542,19 @@ def build_employee_sheet(
 
     # ════════════════════════════════════════════════════════════
     # ضبط عرض الأعمدة تلقائياً (Auto Width) - فقط للأعمدة G إلى O (7 إلى 15)
-    # بدون المساس ببقية الأعمدة أو الهيكل
     # ════════════════════════════════════════════════════════════
     
-    # 1. تثبيت عرض العمود A (لأنه يحتوي على عناوين أطول)
+    # 1. تثبيت عرض العمود A
     _auto_fit_column_a(ws, start_row=1, end_row=ws.max_row)
     
-    # 2. ضبط عرض الأعمدة من G (7) إلى O (15) تلقائياً حسب المحتوى
-    # هذه هي الأعمدة التي نريد ضبطها:
-    # G = الشهر (عمود 7)
-    # H = الدرجة (%) (عمود 8)
-    # I = التقييم اللفظي (عمود 9)
-    # J = تاريخ التقييم (عمود 10)
-    # K = ملاحظات المقيم (عمود 11)
-    # L = الإجراءات التأديبية (عمود 12)
-    # M = عدد مرات التأخير (عمود 13)
-    # N = ساعات التأخير (عمود 14)
-    # O = عمود فارغ أو إضافي (عمود 15)
-    
+    # 2. ضبط عرض الأعمدة من G (7) إلى O (15) تلقائياً
     _auto_fit_columns_range(ws, start_col=7, end_col=15, 
                             start_row=1, end_row=ws.max_row,
                             min_width=6, max_width=30)
     
-    # 3. معالجة خاصة لعمود الملاحظات (K - عمود 11) لأنه قد يحتوي على نصوص طويلة
-    # نعطيه عرض أكبر قليلاً
-    if ws.column_dimensions["K"].width < 22:
+    # 3. معالجة خاصة لعمود الملاحظات (K - عمود 11)
+    current_k_width = ws.column_dimensions["K"].width
+    if current_k_width is None or current_k_width < 22:
         ws.column_dimensions["K"].width = 22
 
     # إعداد الطباعة
@@ -574,4 +563,436 @@ def build_employee_sheet(
     ws.page_setup.fitToPage = True
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
-    ws.sheet_properties.pageSetUp
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_margins = PageMargins(left=0.4, right=0.4, top=0.4, bottom=0.4)
+    ws.print_options.horizontalCentered = True
+
+    return ws
+
+
+# ═══════════════════════════════════════════════════════════════════
+# build_summary_sheet
+# ═══════════════════════════════════════════════════════════════════
+def build_summary_sheet(
+    wb,
+    rows,
+    title="ملخص التقييم",
+    year=None,
+    chart_img=None,
+    disciplinary_summary=None,
+    attendance_summary=None,
+):
+    ws = wb.create_sheet(title[:28])
+    ws.sheet_view.rightToLeft = True
+    ws.sheet_view.showGridLines = False
+
+    for col in range(1, 11):
+        ws.column_dimensions[get_column_letter(col)].width = 12
+
+    ws.row_dimensions[1].height = 32
+    _mc(ws, 1, 1, 1, 10, title,
+        bold=True, sz=12, color="FFFFFF", bg=DARK, ah="center", brd=_BK)
+    _add_logo(ws, anchor="A1", h=30, w=24)
+
+    ws.row_dimensions[2].height = 4
+    ws.row_dimensions[3].height = 16
+
+    hdrs = ["#", "اسم الموظف", "القسم", "السنة",
+            "الأشهر", "المعدل %", "التقييم",
+            "الإجراءات التأديبية", "عدد مرات التأخير", "إجمالي ساعات التأخير"]
+    for ci, h in enumerate(hdrs, 1):
+        _sc(ws.cell(3, ci, h), bold=True, sz=9, color="FFFFFF",
+            bg=DARK, ah="center", brd=_BK)
+
+    disc_s = disciplinary_summary or {}
+    att_s = attendance_summary or {}
+
+    for i, row_data in enumerate(rows, 4):
+        name, dept_, months, pct_val, verb_ = row_data[:5]
+        late_count = row_data[5] if len(row_data) > 5 else 0
+        late_hours = row_data[6] if len(row_data) > 6 else 0.0
+        
+        ws.row_dimensions[i].height = 15
+        rbg = LGRAY if i % 2 == 0 else WHITE
+        sc_c = "375623" if pct_val >= 80 else ("C00000" if pct_val < 60 else "000000")
+        vbg = (GREEN_BG if pct_val >= 80
+               else (YELLOW if pct_val >= 70
+               else (RED_BG if pct_val < 60 else LGRAY)))
+
+        disc_info = disc_s.get(name, {})
+        disc_cnt = disc_info.get("count", 0) if isinstance(disc_info, dict) else int(disc_info or 0)
+        
+        if late_count == 0 and att_s:
+            att_info = att_s.get(name, {})
+            if isinstance(att_info, dict):
+                late_count = att_info.get("count", 0)
+                late_hours = att_info.get("hours", 0.0)
+            else:
+                late_count = int(att_info or 0)
+
+        disc_bg = _DISC_BG if disc_cnt > 0 else rbg
+        att_bg = _ATT_BG if late_count > 0 else rbg
+
+        _sc(ws.cell(i, 1, i - 3), sz=8, ah="center", bg=rbg, brd=INNER_B)
+        _sc(ws.cell(i, 2, name), sz=9, ah="right", bg=rbg, brd=INNER_B)
+        _sc(ws.cell(i, 3, dept_), sz=8, ah="center", bg=rbg, brd=INNER_B)
+        _sc(ws.cell(i, 4, year or ""), sz=9, ah="center", bg=rbg, brd=INNER_B)
+        _sc(ws.cell(i, 5, months), sz=9, ah="center", bg=rbg, brd=INNER_B)
+        _sc(ws.cell(i, 6, f"{pct_val:.1f}%"),
+            sz=10, bold=True, color=sc_c, ah="center", bg=vbg, brd=INNER_B)
+        _sc(ws.cell(i, 7, verb_),
+            sz=9, bold=True, color=sc_c, ah="center", bg=vbg, brd=INNER_B)
+        _sc(ws.cell(i, 8,
+                    f"{disc_cnt} إجراء" if disc_cnt > 0 else "—"),
+            sz=8, ah="center", bg=disc_bg, brd=INNER_B)
+        _sc(ws.cell(i, 9,
+                    f"{late_count} مرة" if late_count > 0 else "—"),
+            sz=8, ah="center", bg=att_bg, brd=INNER_B)
+        _sc(ws.cell(i, 10,
+                    f"{late_hours:.2f} ساعة" if late_hours > 0 else "—"),
+            sz=8, ah="center", bg=att_bg, brd=INNER_B)
+
+    last = 3 + len(rows)
+    thick_s = Side(style="medium", color="000000")
+    for rr in range(3, last + 1):
+        for c_idx in [1, 10]:
+            b = ws.cell(rr, c_idx).border
+            if c_idx == 1:
+                ws.cell(rr, c_idx).border = Border(
+                    left=thick_s, right=b.right, top=b.top, bottom=b.bottom)
+            else:
+                ws.cell(rr, c_idx).border = Border(
+                    left=b.left, right=thick_s, top=b.top, bottom=b.bottom)
+    for c_idx in range(1, 11):
+        b = ws.cell(last, c_idx).border
+        ws.cell(last, c_idx).border = Border(
+            left=b.left, right=b.right, top=b.top, bottom=thick_s)
+
+    # ضبط عرض الأعمدة
+    for col in range(1, 11):
+        max_len = 0
+        col_letter = get_column_letter(col)
+        for row in range(3, last + 1):
+            cell = ws.cell(row, col)
+            if cell.value:
+                try:
+                    text_len = len(str(cell.value))
+                    if any('\u0600' <= c <= '\u06FF' for c in str(cell.value)):
+                        text_len = int(text_len * 1.3)
+                    max_len = max(max_len, text_len)
+                except:
+                    pass
+        new_width = min(max(max_len + 2, 6), 35)
+        if new_width > 0:
+            ws.column_dimensions[col_letter].width = new_width
+
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.paperSize = 9
+    ws.page_setup.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 1
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_margins = PageMargins(left=0.4, right=0.4, top=0.4, bottom=0.4)
+    ws.print_options.horizontalCentered = True
+    ws.print_options.verticalCentered = True
+
+    return ws
+
+
+# ═══════════════════════════════════════════════════════════════════
+# print_preview_html
+# ═══════════════════════════════════════════════════════════════════
+def _rgb_to_hex(color_obj):
+    try:
+        if color_obj and color_obj.type == "rgb":
+            rgb = color_obj.rgb
+            return "#" + rgb[2:]
+    except Exception:
+        pass
+    return ""
+
+
+def print_preview_html(xlsx_buf, title="تقرير", chart_b64=""):
+    xlsx_buf.seek(0)
+    wb = openpyxl.load_workbook(xlsx_buf, data_only=True)
+
+    _logo_b64 = ""
+    for _lp in [LOGO_PATH, "logo.png"]:
+        if os.path.exists(_lp):
+            try:
+                with open(_lp, "rb") as _lf:
+                    _logo_b64 = base64.b64encode(_lf.read()).decode()
+            except Exception:
+                pass
+            break
+
+    CSS = """
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: 'Cairo', Arial, sans-serif;
+    direction: rtl;
+    background: #dde1ea;
+    padding: 16px;
+    margin: 0;
+}
+.no-print {
+    text-align: center;
+    margin-bottom: 16px;
+    position: sticky;
+    top: 0;
+    background: #dde1ea;
+    padding: 8px;
+    z-index: 100;
+}
+.no-print button {
+    padding: 10px 36px;
+    background: #1F3864;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+}
+.no-print button:hover { background: #2E75B6; }
+.page {
+    background: #fff;
+    width: 290mm;
+    margin: 0 auto 20px;
+    padding: 8mm 10mm;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    border-radius: 4px;
+    overflow-x: auto;
+    direction: rtl;
+}
+table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 9pt;
+    font-family: 'Cairo', Arial, sans-serif;
+    margin: 4px 0;
+    table-layout: auto;
+}
+th, td {
+    border: 0.5px solid #aaa;
+    padding: 4px 6px;
+    vertical-align: middle;
+    text-align: center;
+}
+th {
+    background: #1F3864;
+    color: white;
+    font-weight: bold;
+    font-size: 9pt;
+}
+td { background: white; color: #333; }
+.logo-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #1F3864;
+    padding: 6px 16px;
+    margin-bottom: 12px;
+    border-radius: 6px;
+}
+.logo-header span { color: white; font-size: 11pt; font-weight: bold; }
+.logo-header img { height: 44px; width: auto; object-fit: contain; }
+.info-grid {
+    background: #EBF3FB;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    border-radius: 6px;
+    font-size: 9pt;
+}
+.info-row { display: flex; flex-wrap: wrap; margin-bottom: 4px; }
+.info-label { font-weight: bold; width: 100px; color: #1F3864; }
+.info-value { flex: 1; color: #333; }
+.annual-result {
+    background: #ED7D31;
+    color: white;
+    padding: 10px;
+    text-align: center;
+    border-radius: 6px;
+    margin: 12px 0;
+    font-weight: bold;
+    font-size: 14pt;
+}
+.annual-result small { font-size: 9pt; display: block; }
+@media print {
+    body { background: white; padding: 0; margin: 0; }
+    .no-print { display: none !important; }
+    .page {
+        box-shadow: none;
+        padding: 5mm;
+        margin: 0;
+        width: 100%;
+        page-break-after: avoid;
+        break-inside: avoid;
+    }
+    th, td { border-color: #000 !important; }
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+    }
+    @page { size: A4 landscape; margin: 8mm; }
+}
+"""
+
+    def parse_table_from_ws(ws):
+        if ws.max_row == 0:
+            return ""
+        
+        merged = {}
+        skip = set()
+        for m in ws.merged_cells.ranges:
+            merged[(m.min_row, m.min_col)] = (m.max_row - m.min_row + 1, m.max_col - m.min_col + 1)
+            for r2 in range(m.min_row, m.max_row + 1):
+                for c2 in range(m.min_col, m.max_col + 1):
+                    if (r2, c2) != (m.min_row, m.min_col):
+                        skip.add((r2, c2))
+        
+        html = '<div style="overflow-x: auto;"><table style="table-layout: auto;">'
+        html += '<colgroup>'
+        max_col = ws.max_column
+        for c in range(1, max_col + 1):
+            col_letter = get_column_letter(c)
+            width = ws.column_dimensions[col_letter].width or 10
+            html += f'<col style="min-width:{max(width * 5, 40)}px;">'
+        html += '</colgroup>'
+        
+        for r in range(1, ws.max_row + 1):
+            if all((r, c) in skip for c in range(1, max_col + 1)):
+                continue
+            
+            row_height = ws.row_dimensions[r].height if r in ws.row_dimensions else None
+            height_style = f'style="height:{max(int(row_height * 0.9), 18)}px;"' if row_height else ''
+            html += f'<tr {height_style}>'
+            
+            for c in range(1, max_col + 1):
+                if (r, c) in skip:
+                    continue
+                
+                cell = ws.cell(r, c)
+                val = cell.value
+                text = "" if val is None else str(val).replace("\n", "<br>")
+                
+                style = ""
+                
+                p = cell.fill
+                if p and p.fill_type == "solid":
+                    bg = _rgb_to_hex(p.fgColor)
+                    if bg and bg.lower() not in ("#000000", "#ffffff", ""):
+                        style += f"background:{bg};"
+                
+                f_obj = cell.font
+                if f_obj:
+                    if f_obj.bold:
+                        style += "font-weight:bold;"
+                    sz = f_obj.size
+                    if sz:
+                        style += f"font-size:{min(sz, 10)}pt;"
+                    fc = _rgb_to_hex(f_obj.color)
+                    if fc and fc != "#000000":
+                        style += f"color:{fc};"
+                
+                a = cell.alignment
+                if a:
+                    ha = "center"
+                    if a.horizontal == "right":
+                        ha = "right"
+                    elif a.horizontal == "left":
+                        ha = "left"
+                    style += f"text-align:{ha};"
+                    va = "middle"
+                    if a.vertical == "top":
+                        va = "top"
+                    elif a.vertical == "bottom":
+                        va = "bottom"
+                    style += f"vertical-align:{va};"
+                    if a.wrapText:
+                        style += "white-space:normal;word-break:break-word;"
+                
+                style += "padding:3px 5px;"
+                
+                span = ""
+                if (r, c) in merged:
+                    rs2, cs2 = merged[(r, c)]
+                    if rs2 > 1:
+                        span += f' rowspan="{rs2}"'
+                    if cs2 > 1:
+                        span += f' colspan="{cs2}"'
+                
+                html += f'<td style="{style}"{span}>{text}</td>'
+            
+            html += '</tr>'
+        
+        html += '</td></div>'
+        return html
+    
+    parts = [
+        "<!DOCTYPE html>",
+        '<html dir="rtl" lang="ar">',
+        "<head>",
+        '<meta charset="utf-8">',
+        f"<title>{title}</title>",
+        f"<style>{CSS}</style>",
+        "</head><body>",
+        '<div class="no-print">',
+        f'<button onclick="window.print()">🖨️ {title} — طباعة</button>',
+        "</div>",
+    ]
+    
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        if ws.max_row == 0:
+            continue
+        
+        header_text = _company_header()
+        
+        parts.append(f'<div class="page">')
+        
+        if _logo_b64:
+            parts.append(f'''
+            <div class="logo-header">
+                <span>{header_text}</span>
+                <img src="data:image/png;base64,{_logo_b64}" alt="شعار الشركة">
+            </div>
+            ''')
+        else:
+            parts.append(f'<div class="logo-header"><span>{header_text}</span></div>')
+        
+        parts.append('<div class="info-grid">')
+        try:
+            for r in range(2, 9):
+                label = ws.cell(r, 1).value
+                value = ws.cell(r, 2).value
+                if label and value and str(label).strip() not in ("", "نتيجة التقييم السنوي"):
+                    parts.append(f'''
+                    <div class="info-row">
+                        <span class="info-label">{label}:</span>
+                        <span class="info-value">{value}</span>
+                    </div>
+                    ''')
+        except:
+            pass
+        parts.append('</div>')
+        
+        try:
+            for r in range(9, 12):
+                if ws.cell(r, 1).value == "نتيجة التقييم السنوي":
+                    annual_val = ws.cell(r, 3).value or ws.cell(r, 4).value
+                    if annual_val:
+                        parts.append(f'<div class="annual-result"><small>النتيجة النهائية السنوية</small><br>{annual_val}</div>')
+                        break
+        except:
+            pass
+        
+        table_html = parse_table_from_ws(ws)
+        parts.append(table_html)
+        
+        parts.append('</div>')
+    
+    parts.append("</body></html>")
+    return "".join(parts)
