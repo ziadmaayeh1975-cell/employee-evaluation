@@ -84,38 +84,66 @@ def get_kpi_avgs(df_data, df_kpi, emp, job, months_filter=None, year=None):
     ترجع قائمة من dicts تحتوي على:
       - KPI_Name  : اسم المؤشر
       - Weight    : الوزن النسبي
-      - avg_score : متوسط الدرجة للأشهر المحددة
+      - avg_score : متوسط الدرجة للأشهر المحددة (كنسبة مئوية 0-100)
     """
     result = []
-    job_kpis = df_kpi[df_kpi["JobTitle"] == job]
-
+    
+    # التحقق من صحة المدخلات
+    if df_data is None or df_data.empty:
+        return result
+    if df_kpi is None or df_kpi.empty:
+        return result
+    if not emp or not job:
+        return result
+    
+    # تصفية مؤشرات الوظيفة
+    job_kpis = df_kpi[df_kpi["JobTitle"].astype(str).str.strip() == str(job).strip()]
+    
+    if job_kpis.empty:
+        return result
+    
     for _, row in job_kpis.iterrows():
-        kname  = row.get("KPI_Name")
+        kname = row.get("KPI_Name")
         weight = row.get("Weight", 0)
-
+        
         # تجاهل أي صف ناقص
         if not kname or str(kname).strip() in ("", "nan", "None"):
             continue
-
-        weight = float(weight)
-
+        
+        kname_str = str(kname).strip()
+        weight = float(weight) if weight else 0.0
+        
         # تصفية بيانات الموظف لهذا المؤشر
         sub = df_data[
-            (df_data["EmployeeName"] == emp) &
-            (df_data["KPI_Name"] == kname)
+            (df_data["EmployeeName"].astype(str).str.strip() == str(emp).strip()) &
+            (df_data["KPI_Name"].astype(str).str.strip() == kname_str)
         ]
-        if months_filter:
+        
+        # تطبيق فلتر الأشهر إذا وجد
+        if months_filter and len(months_filter) > 0:
             sub = sub[sub["Month"].isin(months_filter)]
+        
+        # تطبيق فلتر السنة إذا وجد
         if year:
             sub = sub[sub["Year"] == int(year)]
-
-        # avg_score = متوسط KPI_% (نسبة مئوية 0-100 تمثل الدرجة من الوزن)
-        avg_score = round(sub["KPI_%"].mean(), 1) if not sub.empty else 0.0
-
+        
+        # حساب المتوسط
+        if not sub.empty:
+            # KPI_% هي الدرجة الفعلية المحققة (من 0 إلى الوزن)
+            # نحتاج إلى تحويلها إلى نسبة مئوية للعرض
+            avg_kpi_score = sub["KPI_%"].mean()  # متوسط الدرجة الفعلية
+            # تحويل إلى نسبة مئوية (0-100)
+            if weight > 0:
+                avg_percentage = round((avg_kpi_score / weight) * 100, 1)
+            else:
+                avg_percentage = 0.0
+        else:
+            avg_percentage = 0.0
+        
         result.append({
-            "KPI_Name":  kname,
+            "KPI_Name":  kname_str,
             "Weight":    weight,
-            "avg_score": avg_score,
+            "avg_score": avg_percentage,  # الآن نسبة مئوية 0-100
         })
-
+    
     return result
