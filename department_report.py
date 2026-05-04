@@ -115,10 +115,32 @@ def render_department_report(df_emp, df_kpi, df_data):
     df_data = _safe_df(df_data)
     allowed_emps = _reviewer_emp_set(df_emp)
 
+    # ── تحديد عمود القسم بالاسم الصحيح ────────────────────────────────────
+    # البحث عن عمود القسم بالاسم أولاً، وإلا الرجوع للعمود الثالث
+    if "القسم" in df_emp.columns:
+        dept_col = "القسم"
+    elif "Department" in df_emp.columns:
+        dept_col = "Department"
+    else:
+        dept_col = df_emp.columns[2]
+
+    # تحديد عمود المسمى الوظيفي بالاسم الصحيح
+    if "JobTitle" in df_emp.columns:
+        job_col = "JobTitle"
+    else:
+        job_col = df_emp.columns[1]
+
+    # تحديد عمود المقيم
+    if "اسم المقيم" in df_emp.columns:
+        mgr_col = "اسم المقيم"
+    elif len(df_emp.columns) > 3:
+        mgr_col = df_emp.columns[3]
+    else:
+        mgr_col = None
+
     # ── فلاتر الاختيار ──────────────────────────────────────────────────────
     c3a, c3b, c3c = st.columns([2, 2, 1])
     with c3a:
-        dept_col = df_emp.columns[2]
         if allowed_emps is None:
             dept_emps_all = df_emp
         else:
@@ -160,9 +182,9 @@ def render_department_report(df_emp, df_kpi, df_data):
             continue
         ei3_row = ei3.iloc[0]
 
-        dept_val = str(ei3_row.iloc[2]).strip()
-        job_val  = str(ei3_row.iloc[1]).strip()
-        mgr_val  = str(ei3_row.iloc[3]).strip() if len(ei3_row) > 3 else ""
+        dept_val = str(ei3_row[dept_col]).strip() if dept_col in ei3.columns else str(ei3_row.iloc[2]).strip()
+        job_val  = str(ei3_row[job_col]).strip()  if job_col  in ei3.columns else str(ei3_row.iloc[1]).strip()
+        mgr_val  = str(ei3_row[mgr_col]).strip()  if mgr_col and mgr_col in ei3.columns else (str(ei3_row.iloc[3]).strip() if len(ei3_row) > 3 else "")
         emp_id   = str(ei3_row.get("رقم الموظف", "")) if "رقم الموظف" in ei3.columns else ""
 
         # ── الدرجات الشهرية ────────────────────────────────────────────────
@@ -319,14 +341,15 @@ def render_department_report(df_emp, df_kpi, df_data):
     # جدول الملخص العام
     # ══════════════════════════════════════════════════════════════════════════
     display_df = pd.DataFrame([{
-        "الموظف":           s["emp"],
-        "القسم":            s["dept"],
-        "السنة":            sel3_year,
-        "الأشهر":           s["months"],
-        "المعدل (%)":       s["pct"],
-        "التقييم":          s["verb"],
-        "عدد مرات التأخير": s["attendance_count"],
-        "ساعات التأخير":    f"{s['attendance_hours']:.2f}",
+        "الموظف":              s["emp"],
+        "القسم":               s["dept"],
+        "السنة":               sel3_year,
+        "الأشهر":              s["months"],
+        "المعدل (%)":          s["pct"],
+        "التقييم":             s["verb"],
+        "الإجراءات التأديبية": len(s["disciplinary_df"]) if s["disciplinary_df"] is not None and not s["disciplinary_df"].empty else 0,
+        "عدد مرات التأخير":    s["attendance_count"],
+        "ساعات التأخير":       f"{s['attendance_hours']:.2f}",
     } for s in summary3])
     st.dataframe(display_df, hide_index=True, use_container_width=True)
 
@@ -483,7 +506,19 @@ def render_department_report(df_emp, df_kpi, df_data):
     )
     build_summary_sheet(
         wb3,
-        [(s["emp"], s["dept"], s["months"], s["pct"], s["verb"]) for s in summary3],
+        [
+            (
+                s["emp"],
+                s["dept"],
+                s["months"],
+                s["pct"],
+                s["verb"],
+                len(s["disciplinary_df"]) if s["disciplinary_df"] is not None and not s["disciplinary_df"].empty else 0,
+                s["attendance_count"],
+                round(s["attendance_hours"], 2),
+            )
+            for s in summary3
+        ],
         sum_title,
         year=sel3_year
     )
