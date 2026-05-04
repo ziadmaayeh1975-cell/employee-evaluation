@@ -3,18 +3,11 @@ from datetime import date
 import openpyxl
 import pandas as pd
 import streamlit as st
-from constants import MONTHS_AR, MONTHS_EN, MONTHS_SHORT, MONTH_MAP, PERSONAL_KPIS, PERSONAL_WEIGHT
-from calculations import calc_monthly, verbal_grade, kpi_score_to_pct, rating_label
+from constants import MONTHS_AR, MONTHS_EN, MONTHS_SHORT, MONTH_MAP, PERSONAL_KPIS
+from calculations import calc_monthly, get_kpi_avgs, verbal_grade
 from data_loader import get_emp_notes
 from auth import get_current_reviewer, get_current_role
 from report_export import build_employee_sheet, build_summary_sheet, print_preview_html
-
-# استيراد نظام الإجراءات التأديبية
-try:
-    from disciplinary_manager import get_actions_by_employee
-    DISCIPLINARY_AVAILABLE = True
-except ImportError:
-    DISCIPLINARY_AVAILABLE = False
 
 # استيراد نظام الالتزام بالدوام
 try:
@@ -93,65 +86,6 @@ def _get_month_details(df_data, emp_name, month_en, year):
     return eval_date, notes, training
 
 
-def get_kpis_for_employee(df_data, df_kpi, emp, job, months_filter, year):
-    """
-    نفس طريقة سحب المؤشرات المستخدمة في employee_report.py
-    """
-    job_kpis = []
-    pers_kpis = []
-    
-    job_kpis_df = df_kpi[df_kpi["JobTitle"] == job]
-    
-    for _, row in job_kpis_df.iterrows():
-        kpi_name = row["KPI_Name"]
-        weight = float(row["Weight"])
-        
-        if kpi_name in PERSONAL_KPIS:
-            continue
-        
-        scores = []
-        for en in MONTHS_EN:
-            if months_filter and en not in months_filter:
-                continue
-            mask = (
-                (df_data["EmployeeName"] == emp) &
-                (df_data["Month"] == en) &
-                (df_data["Year"] == int(year)) &
-                (df_data["KPI_Name"] == kpi_name)
-            )
-            sub = df_data[mask]
-            if not sub.empty:
-                scores.append(sub["KPI_%"].sum())
-        avg_score = sum(scores) / len(scores) if scores else 0.0
-        job_kpis.append((kpi_name, weight, avg_score))
-    
-    # مؤشرات الصفات الشخصية
-    personal_kpis_df = df_kpi[(df_kpi["JobTitle"] == job) & (df_kpi["KPI_Name"].isin(PERSONAL_KPIS))]
-    source_kpis = personal_kpis_df.iterrows() if not personal_kpis_df.empty else [
-        (None, {"KPI_Name": k, "Weight": PERSONAL_WEIGHT}) for k in PERSONAL_KPIS
-    ]
-    for _, row in source_kpis:
-        kpi_name = row["KPI_Name"]
-        weight = float(row["Weight"])
-        scores = []
-        for en in MONTHS_EN:
-            if months_filter and en not in months_filter:
-                continue
-            mask = (
-                (df_data["EmployeeName"] == emp) &
-                (df_data["Month"] == en) &
-                (df_data["Year"] == int(year)) &
-                (df_data["KPI_Name"] == kpi_name)
-            )
-            sub = df_data[mask]
-            if not sub.empty:
-                scores.append(sub["KPI_%"].sum())
-        avg_score = sum(scores) / len(scores) if scores else 0.0
-        pers_kpis.append((kpi_name, weight, avg_score))
-    
-    return job_kpis, pers_kpis
-
-
 def render_department_report(df_emp, df_kpi, df_data):
     st.subheader("📊 التقرير المفصّل بالأقسام")
     df_data = _safe_df(df_data)
@@ -198,29 +132,15 @@ def render_department_report(df_emp, df_kpi, df_data):
         avg3 = sum(active3) / len(active3) if active3 else 0.0
         
         # جلب بيانات الالتزام بالدوام للموظف
-        attendance_monthly = {}
         attendance_count = 0
         attendance_hours = 0.0
         if ATTENDANCE_AVAILABLE:
             try:
                 for month_num in range(1, 13):
                     att_summary = get_employee_attendance_summary(emp, emp_id, sel3_year, month_num)
-                    att_count = att_summary.get("count", 0) or 0
-                    att_hrs = att_summary.get("hours", 0) or 0.0
-                    attendance_monthly[month_num] = {"count": att_count, "hours": att_hrs}
-                    attendance_count += att_count
-                    attendance_hours += att_hrs
+                    attendance_count += att_summary["count"]
+                    attendance_hours += att_summary["hours"]
             except:
-                pass
-        
-        # جلب الإجراءات التأديبية للموظف
-        disciplinary_df = None
-        if DISCIPLINARY_AVAILABLE:
-            try:
-                disc_actions_list = get_actions_by_employee(emp, sel3_year)
-                if disc_actions_list:
-                    disciplinary_df = pd.DataFrame(disc_actions_list)
-            except Exception as e:
                 pass
         
         summary3.append({
@@ -231,13 +151,11 @@ def render_department_report(df_emp, df_kpi, df_data):
             "verb": verbal_grade(avg3 * 100) if active3 else "—",
             "emp_id": emp_id,
             "attendance_count": attendance_count,
-            "attendance_hours": attendance_hours,
-            "attendance_monthly": attendance_monthly,
-            "disciplinary_df": disciplinary_df
+            "attendance_hours": attendance_hours
         })
     summary3.sort(key=lambda x: x["pct"], reverse=True)
 
-    # عرض جدول الملخص
+    # عرض جدول الملخص مع إضافة بيانات الالتزام بالدوام
     display_df = pd.DataFrame([{
         "الموظف": s["emp"], 
         "القسم": s["dept"], 
@@ -252,29 +170,14 @@ def render_department_report(df_emp, df_kpi, df_data):
 
     wb3 = openpyxl.Workbook()
     wb3.remove(wb3.active)
-    
     for s in summary3:
         ei3 = df_emp[df_emp["EmployeeName"] == s["emp"]]
-        if ei3.empty: 
-            continue
+        if ei3.empty: continue
         ei3 = ei3.iloc[0]
         job3 = str(ei3.iloc[1]).strip()
         d3 = str(ei3.iloc[2]).strip()
         m3 = str(ei3.iloc[3]).strip()
-        
-        # ✅ استخدام نفس طريقة سحب المؤشرات من employee_report.py
-        job_kpis, pers_kpis = get_kpis_for_employee(df_data, df_kpi, s["emp"], job3, months_en_f3, sel3_year)
-        
-        # تحويل إلى نفس شكل kpis_export المستخدم في build_employee_sheet
-        kpis_export = []
-        for k, w, g in job_kpis + pers_kpis:
-            kpis_export.append({
-                "KPI_Name": k,
-                "Weight": w,
-                "avg_score": round(kpi_score_to_pct(g, w), 1)  # تحويل الدرجة الفعلية إلى نسبة مئوية
-            })
-        
-        # إعداد البيانات الشهرية
+        kpis3 = get_kpi_avgs(df_data, df_kpi, s["emp"], job3, months_en_f3, sel3_year)
         ms3 = []
         for idx, (en, short) in enumerate(zip(MONTHS_EN, MONTHS_SHORT)):
             if months_en_f3 and en not in months_en_f3:
@@ -283,8 +186,6 @@ def render_department_report(df_emp, df_kpi, df_data):
                 score = calc_monthly(df_data, s["emp"], en, sel3_year)
                 ev, nm, tr = _get_month_details(df_data, s["emp"], en, sel3_year)
                 ms3.append((idx+1, short, score, ev, nm, tr))
-        
-        # جلب ملاحظات وتدريب الموظف
         emp_notes = ""; emp_train = ""
         for item in ms3:
             if item[2] > 0:
@@ -295,39 +196,19 @@ def render_department_report(df_emp, df_kpi, df_data):
         # تحضير بيانات الالتزام بالدوام للتصدير
         attendance_export = None
         if s["attendance_count"] > 0 or s["attendance_hours"] > 0:
-            monthly_list = []
-            for month_num, att_data in s.get("attendance_monthly", {}).items():
-                if att_data["count"] > 0 or att_data["hours"] > 0:
-                    monthly_list.append({
-                        "month": month_num,
-                        "late_count": att_data["count"],
-                        "late_hours": att_data["hours"]
-                    })
-            if monthly_list:
-                attendance_export = pd.DataFrame(monthly_list)
-            else:
-                attendance_export = pd.DataFrame([{
-                    "employee_name": s["emp"],
-                    "employee_id": s["emp_id"],
-                    "year": sel3_year,
-                    "late_count": s["attendance_count"],
-                    "total_late_hours": s["attendance_hours"]
-                }])
+            attendance_export = pd.DataFrame([{
+                "employee_name": s["emp"],
+                "employee_id": s["emp_id"],
+                "year": sel3_year,
+                "late_count": s["attendance_count"],
+                "total_late_hours": s["attendance_hours"]
+            }])
         
         build_employee_sheet(
-            wb3, 
-            s["emp"], 
-            job3, 
-            d3, 
-            m3, 
-            sel3_year,
-            kpis_export,  # ✅ باستخدام نفس شكل البيانات من employee_report.py
-            ms3, 
-            emp_notes, 
-            emp_train,
+            wb3, s["emp"], job3, d3, m3, sel3_year,
+            kpis3, ms3, emp_notes, emp_train,
             employee_id=s["emp_id"],
-            attendance_data=attendance_export,
-            disciplinary_actions=s.get("disciplinary_df")
+            attendance_data=attendance_export
         )
 
     period_label = "، ".join(sel3_months) if sel3_months else "كل الأشهر"
@@ -341,8 +222,7 @@ def render_department_report(df_emp, df_kpi, df_data):
     st.download_button(
         label=f"📥 تحميل Excel ({len(summary3)} موظف)",
         data=buf3, file_name=f"تقارير_{d_label}_{date.today()}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
-        use_container_width=True,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True,
     )
     st.markdown("---")
     st.markdown("#### 🖨️ معاينة وطباعة")
