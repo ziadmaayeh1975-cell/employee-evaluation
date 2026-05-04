@@ -120,6 +120,9 @@ def _auto_fit_column_a(ws, start_row=1, end_row=None):
 
 
 def _disc_by_month(disciplinary_actions):
+    """
+    يُرجع قاموساً: {month_num: [{"date": "...", "type": "...", "reason": "..."}, ...]}
+    """
     result = {}
     if disciplinary_actions is None:
         return result
@@ -127,13 +130,24 @@ def _disc_by_month(disciplinary_actions):
         if getattr(disciplinary_actions, "empty", True):
             return result
         for _, row in disciplinary_actions.iterrows():
-            dd = str(row.get("action_date", "") or "")
-            if not dd:
+            dd = str(row.get("action_date", "") or "").strip()
+            if not dd or dd in ("nan", "None"):
                 continue
             try:
                 mn = int(dd.split("-")[1])
-                result.setdefault(mn, []).append(
-                    str(row.get("warning_type", "") or ""))
+                # تنسيق التاريخ كاملاً dd/mm/yyyy
+                try:
+                    import pandas as _pd
+                    full_date = _pd.to_datetime(dd).strftime("%d/%m/%Y")
+                except Exception:
+                    full_date = dd
+                warning_type = str(row.get("warning_type", "") or "").strip()
+                reason       = str(row.get("reason",       "") or "").strip()
+                result.setdefault(mn, []).append({
+                    "date":   full_date,
+                    "type":   warning_type if warning_type not in ("", "nan", "None") else "—",
+                    "reason": reason       if reason       not in ("", "nan", "None") else "—",
+                })
             except Exception:
                 pass
     except Exception:
@@ -306,7 +320,7 @@ def build_employee_sheet(
         else:
             score_pct = verbal_val = eval_date = note = "—"
 
-        disc_text = ("، ".join(set(disc_map[month_idx]))
+        disc_text = ("، ".join(set(a["type"] for a in disc_map[month_idx]))
                      if month_idx in disc_map else "—")
         late_count = att_count_map.get(month_idx, 0)
         late_hours = att_hours_map.get(month_idx, 0.0)
@@ -442,14 +456,23 @@ def build_employee_sheet(
         _mc(ws, r, 1, r, 4, "⚠️ الإجراءات التأديبية المسجلة",
             bold=True, color="FFFFFF", bg="C00000", ah="right", brd=_TN)
         r += 1
+        # رأس الأعمدة
+        ws.row_dimensions[r].height = 13
+        _sc(ws.cell(r, 1, "تاريخ الإجراء"), bold=True, color="FFFFFF", bg=MID, ah="center", sz=8, brd=_TN)
+        _sc(ws.cell(r, 2, "نوع الإنذار"),   bold=True, color="FFFFFF", bg=MID, ah="center", sz=8, brd=_TN)
+        ws.merge_cells(start_row=r, start_column=3, end_row=r, end_column=4)
+        _sc(ws.cell(r, 3, "سبب الإجراء"),   bold=True, color="FFFFFF", bg=MID, ah="center", sz=8, brd=_TN)
+        r += 1
         for mn, actions in sorted(disc_map.items()):
-            month_name_d = _MONTHS_LIST[mn - 1] if 1 <= mn <= 12 else str(mn)
             for act in actions:
                 ws.row_dimensions[r].height = 13
-                _sc(ws.cell(r, 1, month_name_d), bg=_DISC_BG, ah="center", sz=8, brd=_TN)
-                ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=4)
-                _sc(ws.cell(r, 2, act or "إجراء تأديبي"),
-                    bg=_DISC_BG, ah="right", sz=8, brd=_TN)
+                _sc(ws.cell(r, 1, act.get("date", "—")),
+                    bg=_DISC_BG, ah="center", sz=8, brd=_TN)
+                _sc(ws.cell(r, 2, act.get("type", "—")),
+                    bg=_DISC_BG, ah="center", sz=8, brd=_TN)
+                ws.merge_cells(start_row=r, start_column=3, end_row=r, end_column=4)
+                _sc(ws.cell(r, 3, act.get("reason", "—")),
+                    bg=_DISC_BG, ah="right", wrap=True, sz=8, brd=_TN)
                 r += 1
         r += 1
     else:
@@ -575,28 +598,29 @@ def build_summary_sheet(
 
     for i, row_data in enumerate(rows, 4):
         name, dept_, months, pct_val, verb_ = row_data[:5]
-        # إذا كان هناك بيانات إضافية للتأخير (اختياري)
-        late_count = row_data[5] if len(row_data) > 5 else 0
-        late_hours = row_data[6] if len(row_data) > 6 else 0.0
-        
-        ws.row_dimensions[i].height = 15
-        rbg = LGRAY if i % 2 == 0 else WHITE
-        sc_c = "375623" if pct_val >= 80 else ("C00000" if pct_val < 60 else "000000")
-        vbg = (GREEN_BG if pct_val >= 80
-               else (YELLOW if pct_val >= 70
-               else (RED_BG if pct_val < 60 else LGRAY)))
+        # قراءة بيانات الإجراءات التأديبية والتأخير مباشرة من row_data
+        disc_cnt   = int(row_data[5]) if len(row_data) > 5 and row_data[5] else 0
+        late_count = int(row_data[6]) if len(row_data) > 6 and row_data[6] else 0
+        late_hours = float(row_data[7]) if len(row_data) > 7 and row_data[7] else 0.0
 
-        disc_info = disc_s.get(name, {})
-        disc_cnt = disc_info.get("count", 0) if isinstance(disc_info, dict) else int(disc_info or 0)
-        
-        # إذا لم يتم تمرير late_count في row_data، نستخدم من attendance_summary
+        # fallback من disciplinary_summary/attendance_summary إذا لم تُمرَّر في row_data
+        if disc_cnt == 0 and disc_s:
+            disc_info = disc_s.get(name, {})
+            disc_cnt  = disc_info.get("count", 0) if isinstance(disc_info, dict) else int(disc_info or 0)
         if late_count == 0 and att_s:
-            att_info = att_s.get(name, {})
+            att_info   = att_s.get(name, {})
             if isinstance(att_info, dict):
                 late_count = att_info.get("count", 0)
                 late_hours = att_info.get("hours", 0.0)
             else:
                 late_count = int(att_info or 0)
+
+        ws.row_dimensions[i].height = 15
+        rbg  = LGRAY if i % 2 == 0 else WHITE
+        sc_c = "375623" if pct_val >= 80 else ("C00000" if pct_val < 60 else "000000")
+        vbg  = (GREEN_BG if pct_val >= 80
+                else (YELLOW if pct_val >= 70
+                else (RED_BG if pct_val < 60 else LGRAY)))
 
         disc_bg = _DISC_BG if disc_cnt > 0 else rbg
         att_bg = _ATT_BG if late_count > 0 else rbg
