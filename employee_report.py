@@ -214,7 +214,14 @@ def render_employee_report(df_emp, df_kpi, df_data):
         except:
             pass
 
-    # ── ATTENDANCE ───────────────────────────────────────────────────────────
+    # ── ATTENDANCE: collect per-month for granular display & export ───────────
+    # FIX: loop month-by-month so we get a breakdown instead of one aggregate row.
+    # This populates:
+    #   attendance_monthly_rows → list of {month, late_count, late_hours}  (for export)
+    #   att_cnt_by_month        → {month_num: count}   (for monthly table display)
+    #   att_hrs_by_month        → {month_num: hours}   (for monthly table display)
+    #   attendance_count        → annual total count
+    #   attendance_hours        → annual total hours
     attendance_monthly_rows = []
     att_cnt_by_month        = {}
     att_hrs_by_month        = {}
@@ -240,13 +247,16 @@ def render_employee_report(df_emp, df_kpi, df_data):
         except:
             pass
 
+    # Build the DataFrame passed to build_employee_sheet:
+    # - If we have per-month rows → pass them (enables monthly column in Excel/HTML)
+    # - Fallback: single aggregate row (still shows totals in summary section)
     if attendance_monthly_rows:
         attendance_export = pd.DataFrame(attendance_monthly_rows)
     elif attendance_count > 0 or attendance_hours > 0:
         attendance_export = pd.DataFrame([{
-            "month": 0,
-            "late_count": attendance_count,
-            "late_hours": attendance_hours,
+            "late_count":       attendance_count,
+            "late_hours":       attendance_hours,
+            "total_late_hours": attendance_hours,   # accepted by both old & new report_export
         }])
     else:
         attendance_export = None
@@ -255,6 +265,7 @@ def render_employee_report(df_emp, df_kpi, df_data):
     # UI RENDERING
     # ══════════════════════════════════════════════════════════════════════════
 
+    # Employee info card
     st.markdown(f"""
     <div style="background:#F8FAFC;border:1px solid #CBD5E1;border-radius:12px;
                 padding:16px;margin-bottom:10px;direction:rtl;">
@@ -267,6 +278,7 @@ def render_employee_report(df_emp, df_kpi, df_data):
     </div>
     """, unsafe_allow_html=True)
 
+    # Annual result
     st.markdown(f"""
     <div style="background:white;border:2px solid #1E3A8A;border-radius:12px;
                 padding:18px;text-align:center;margin-bottom:12px;">
@@ -297,6 +309,8 @@ def render_employee_report(df_emp, df_kpi, df_data):
     st.markdown("---")
 
     if done2:
+        # ── Monthly evaluation table ──────────────────────────────────────────
+        # FIX: added "عدد التأخيرات" and "ساعات التأخير" columns using per-month data
         st.markdown("### 📅 نتيجة التقييم الشهري")
 
         monthly_table_data = []
@@ -304,16 +318,15 @@ def render_employee_report(df_emp, df_kpi, df_data):
             month_name = MONTHS_AR[n - 1]
             late_cnt   = att_cnt_by_month.get(n, 0)
             late_hrs   = att_hrs_by_month.get(n, 0.0)
-            score_pct = round(score * 100, 1) if score > 0 else 0
             if score > 0:
                 monthly_table_data.append({
                     "الشهر":          month_name,
-                    "الدرجة (%)":     f"{score_pct}%",
-                    "التقييم اللفظي": verbal_grade(score_pct),
+                    "الدرجة (%)":     f"{round(score * 100, 1)}%",
+                    "التقييم اللفظي": verbal_grade(score * 100),
                     "تاريخ التقييم":  ev_date if ev_date else "—",
                     "ملاحظات المقيم": note    if note    else "—",
-                    "عدد مرات التأخير":  str(int(late_cnt)) if late_cnt > 0 else "0",
-                    "ساعات التأخير":  f"{late_hrs:.2f}" if late_hrs > 0 else "0.00",
+                    "عدد التأخيرات":  str(int(late_cnt)) if late_cnt > 0 else "—",
+                    "ساعات التأخير":  f"{late_hrs:.2f}"  if late_hrs > 0 else "—",
                 })
             else:
                 monthly_table_data.append({
@@ -322,8 +335,8 @@ def render_employee_report(df_emp, df_kpi, df_data):
                     "التقييم اللفظي": "—",
                     "تاريخ التقييم":  "—",
                     "ملاحظات المقيم": "—",
-                    "عدد مرات التأخير":  str(int(late_cnt)) if late_cnt > 0 else "0",
-                    "ساعات التأخير":  f"{late_hrs:.2f}" if late_hrs > 0 else "0.00",
+                    "عدد التأخيرات":  str(int(late_cnt)) if late_cnt > 0 else "—",
+                    "ساعات التأخير":  f"{late_hrs:.2f}"  if late_hrs > 0 else "—",
                 })
 
         st.dataframe(
@@ -336,13 +349,14 @@ def render_employee_report(df_emp, df_kpi, df_data):
                 "التقييم اللفظي": st.column_config.TextColumn("التقييم",        width="medium"),
                 "تاريخ التقييم":  st.column_config.TextColumn("تاريخ التقييم",  width="medium"),
                 "ملاحظات المقيم": st.column_config.TextColumn("ملاحظات المقيم", width="large"),
-                "عدد مرات التأخير":  st.column_config.TextColumn("عدد مرات التأخير",  width="small"),
+                "عدد التأخيرات":  st.column_config.TextColumn("عدد التأخيرات",  width="small"),
                 "ساعات التأخير":  st.column_config.TextColumn("ساعات التأخير",  width="small"),
             }
         )
 
         st.markdown("---")
 
+        # ── KPI tables side by side ───────────────────────────────────────────
         col_kpi, col_pers = st.columns(2)
 
         with col_kpi:
@@ -371,6 +385,7 @@ def render_employee_report(df_emp, df_kpi, df_data):
             else:
                 st.info("لا توجد مؤشرات صفات شخصية")
 
+        # ── Disciplinary actions ──────────────────────────────────────────────
         if disciplinary_df is not None and not disciplinary_df.empty:
             st.subheader("⚠️ الإجراءات التأديبية المسجلة")
             disc_display = disciplinary_df.copy().rename(columns={
@@ -384,6 +399,8 @@ def render_employee_report(df_emp, df_kpi, df_data):
             if available_cols:
                 st.dataframe(disc_display[available_cols], use_container_width=True, hide_index=True)
 
+        # ── Attendance summary ────────────────────────────────────────────────
+        # FIX: always show this section (even if 0) so the user can see the status
         st.subheader("⏰ الالتزام بالدوام")
         att_col1, att_col2 = st.columns(2)
         with att_col1:
@@ -391,12 +408,14 @@ def render_employee_report(df_emp, df_kpi, df_data):
         with att_col2:
             st.metric("⏱️ إجمالي ساعات التأخير", f"{attendance_hours:.2f}")
 
+        # ── Notes & training ──────────────────────────────────────────────────
         cn, ct = st.columns(2)
         with cn:
             st.info(f"📝 **ملاحظات المقيم:** {notes2 or '—'}")
         with ct:
             st.info(f"🎓 **الاحتياجات التدريبية:** {training2 or '—'}")
 
+        # ── Bar chart ─────────────────────────────────────────────────────────
         months_done_list = [(MONTHS_AR[n - 1], round(s * 100, 1)) for n, _, s, *_ in monthly_rep if s > 0]
         if months_done_list and PLOTLY_OK:
             st.markdown("---")
@@ -421,15 +440,17 @@ def render_employee_report(df_emp, df_kpi, df_data):
     else:
         st.info("لا توجد تقييمات")
 
+    # ── Download report ───────────────────────────────────────────────────────
     st.subheader("⬇️ تحميل التقرير")
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
     kpis_export = [
-        {"KPI_Name": k, "Weight": w, "avg_score": round(kpi_score_to_pct(g, w), 1)}
+        {"KPI_Name": k, "Weight": w, "avg_score": g}
         for k, w, g in job_kpis2 + pers_kpis2
     ]
 
+    # FIX: pass per-month attendance_export so Excel/HTML show monthly breakdown
     build_employee_sheet(
         wb, sel2, job2, dept2, mgr2, sel2_year,
         kpis_export, monthly_rep, notes2, training2,
