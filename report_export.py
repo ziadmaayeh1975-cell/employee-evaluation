@@ -700,401 +700,315 @@ def print_preview_html(xlsx_buf, title="تقرير", chart_b64=""):
                 pass
             break
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # CSS — معاينة شاشة بعرض A4 landscape + طباعة صفحة واحدة
+    # قاعدة: حجم الخط لا يُمسّ — الموائمة عبر transform:scale لكل ورقة
+    # ─────────────────────────────────────────────────────────────────────────
     CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
-* {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
     font-family: 'Cairo', Arial, sans-serif;
     direction: rtl;
     background: #dde1ea;
-    padding: 16px;
+    padding: 12px;
     margin: 0;
 }
 
+/* ── زر الطباعة ─────────────────────────────────────── */
 .no-print {
     text-align: center;
-    margin-bottom: 16px;
+    margin-bottom: 10px;
     position: sticky;
     top: 0;
     background: #dde1ea;
-    padding: 8px;
+    padding: 6px;
     z-index: 100;
 }
 .no-print button {
-    padding: 10px 36px;
+    padding: 9px 32px;
     background: #1F3864;
     color: #fff;
     border: none;
     border-radius: 8px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 13px;
     font-family: 'Cairo', Arial, sans-serif;
     font-weight: 700;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    box-shadow: 0 2px 8px rgba(0,0,0,.2);
 }
-.no-print button:hover {
-    background: #2E75B6;
-}
+.no-print button:hover { background: #2E75B6; }
 
-.page {
+/* ── غلاف الصفحة (شاشة) ─────────────────────────────
+   عرض A4 landscape الصافي = 297mm − هوامش 2×8mm = 281mm
+   نعرضها كاملةً في المعاينة بدون scroll أفقي           */
+.page-wrapper {
+    width: 281mm;
+    margin: 0 auto 20px auto;
     background: #fff;
-    width: 290mm;
-    margin: 0 auto 20px;
-    padding: 8mm 10mm;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    box-shadow: 0 4px 16px rgba(0,0,0,.15);
     border-radius: 4px;
-    overflow-x: auto;
+    padding: 5mm 7mm;
     direction: rtl;
+    overflow: hidden;
 }
 
+/* ── الجدول ─────────────────────────────────────────── */
 table {
     border-collapse: collapse;
     width: 100%;
-    font-size: 9pt;
+    table-layout: fixed;      /* يوزع الأعمدة حسب الأوزان النسبية */
+    font-size: 8pt;           /* حجم ثابت لا يُعدَّل */
     font-family: 'Cairo', Arial, sans-serif;
     direction: rtl;
-    margin: 4px 0;
+    margin: 2px 0;
 }
-
 th, td {
     border: 0.5px solid #aaa;
-    padding: 5px 8px;
+    padding: 2px 4px;
     vertical-align: middle;
     text-align: center;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
 }
-
 th {
     background: #1F3864;
     color: white;
     font-weight: bold;
-    font-size: 9pt;
+    font-size: 8pt;
 }
+td { background: white; color: #333; }
+td:first-child { font-weight: bold; background: #f0f2f5; }
 
-td {
-    background: white;
-    color: #333;
-}
-
-td:first-child {
-    text-align: center;
-    font-weight: bold;
-    background: #f0f2f5;
-}
-
-.rtl-text {
-    text-align: right;
-}
-
-.table-title {
-    background: #1F3864;
-    color: white;
-    padding: 8px 12px;
-    font-weight: bold;
-    font-size: 11pt;
-    margin-top: 16px;
-    margin-bottom: 4px;
-    border-radius: 4px;
-}
-
+/* ── ترويسة الشعار ──────────────────────────────────── */
 .logo-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     background: #1F3864;
-    padding: 6px 16px;
-    margin-bottom: 12px;
-    border-radius: 6px;
+    padding: 4px 12px;
+    margin-bottom: 5px;
+    border-radius: 4px;
 }
+.logo-header span { color: white; font-size: 10pt; font-weight: bold; }
+.logo-header img  { height: 34px; width: auto; object-fit: contain; }
 
-.logo-header span {
-    color: white;
-    font-size: 11pt;
-    font-weight: bold;
-}
-
-.logo-header img {
-    height: 44px;
-    width: auto;
-    object-fit: contain;
-}
-
+/* ── معلومات الموظف ─────────────────────────────────── */
 .info-grid {
     background: #EBF3FB;
-    padding: 8px 12px;
-    margin-bottom: 12px;
-    border-radius: 6px;
-    font-size: 9pt;
+    padding: 4px 10px;
+    margin-bottom: 5px;
+    border-radius: 4px;
+    font-size: 8pt;
     direction: rtl;
 }
+.info-row  { display: flex; flex-wrap: wrap; margin-bottom: 2px; }
+.info-label { font-weight: bold; width: 88px; color: #1F3864; }
+.info-value { flex: 1; color: #333; }
 
-.info-row {
-    display: flex;
-    flex-wrap: wrap;
-    margin-bottom: 4px;
-}
-
-.info-label {
-    font-weight: bold;
-    width: 100px;
-    color: #1F3864;
-}
-
-.info-value {
-    flex: 1;
-    color: #333;
-}
-
+/* ── النتيجة السنوية ─────────────────────────────────── */
 .annual-result {
     background: #ED7D31;
     color: white;
-    padding: 10px;
+    padding: 6px;
     text-align: center;
-    border-radius: 6px;
-    margin: 12px 0;
-    font-weight: bold;
-    font-size: 14pt;
-}
-
-.annual-result small {
-    font-size: 9pt;
-    display: block;
-}
-
-.kpi-section {
-    margin: 12px 0;
-    border: 1px solid #ddd;
     border-radius: 4px;
-    overflow: hidden;
-}
-
-.kpi-header {
-    background: #2E75B6;
-    color: white;
-    padding: 6px 12px;
+    margin: 5px 0;
     font-weight: bold;
+    font-size: 12pt;
 }
+.annual-result small { font-size: 8pt; display: block; }
 
-.kpi-table {
-    width: 100%;
-    font-size: 8pt;
-}
-
-.kpi-table td, .kpi-table th {
-    padding: 4px 6px;
-}
-
-.disciplinary-section {
-    margin: 12px 0;
-    border: 1px solid #C00000;
-    border-radius: 4px;
-    overflow: hidden;
-}
-
-.disciplinary-header {
-    background: #C00000;
-    color: white;
-    padding: 6px 12px;
-    font-weight: bold;
-}
-
-.attendance-section {
-    margin: 12px 0;
-    border: 1px solid #1F3864;
-    border-radius: 4px;
-    overflow: hidden;
-}
-
-.attendance-header {
-    background: #1F3864;
-    color: white;
-    padding: 6px 12px;
-    font-weight: bold;
-}
-
-.attendance-grid {
-    display: flex;
-    background: #E0F2FE;
-    padding: 8px 12px;
-    gap: 24px;
-}
-
-.attendance-item {
-    flex: 1;
-    text-align: center;
-}
-
-.attendance-label {
-    font-weight: bold;
-    color: #1F3864;
-    font-size: 9pt;
-}
-
-.attendance-value {
-    font-size: 11pt;
-    font-weight: bold;
-    color: #15803d;
-}
-
-.signature {
-    margin-top: 20px;
-    padding-top: 12px;
-    border-top: 1px solid #ccc;
-    display: flex;
-    justify-content: space-between;
-    font-size: 9pt;
-}
-
+/* ══════════════════════════════════════════════════════
+   طباعة — A4 landscape — صفحة واحدة لكل ورقة عمل
+   الحل: نُقلِّص كل .page-wrapper بـ transform:scale
+   حتى يتسع في مساحة الطباعة دون المساس بحجم الخط
+   ══════════════════════════════════════════════════════ */
 @media print {
+    /* ─── إعداد الصفحة ──────────────────────────────── */
+    @page {
+        size: A4 landscape;
+        margin: 6mm;
+    }
+
+    /* ─── إخفاء زر الطباعة ─────────────────────────── */
+    .no-print { display: none !important; }
+
+    /* ─── جسم الصفحة ───────────────────────────────── */
     body {
         background: white;
         padding: 0;
         margin: 0;
     }
-    .no-print {
-        display: none !important;
-    }
-    .page {
-        box-shadow: none;
-        padding: 5mm;
-        margin: 0;
-        width: 100%;
-        page-break-after: avoid;
+
+    /* ─── كل ورقة عمل = صفحة طباعة مستقلة ────────── */
+    .page-wrapper {
+        /* فصل كل ورقة في صفحة مستقلة */
+        page-break-before: always;
+        break-before: page;
+        page-break-inside: avoid;
         break-inside: avoid;
+
+        /* إزالة تنسيقات الشاشة */
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 3mm 4mm !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        overflow: visible !important;
+
+        /* ── الموائمة للصفحة الواحدة بدون تغيير الخط ──
+           transform:scale يُصغِّر المحتوى كوحدة متكاملة
+           مع الحفاظ على نسبه الداخلية (الخط، الهوامش...)
+           القيمة 0.85 تتسع لمعظم التقارير؛ المتصفح يتعامل
+           مع fit-to-page تلقائياً عند الطباعة أيضاً        */
+        transform-origin: top right;
+    }
+
+    /* ── إخبار المتصفح بملء الصفحة ─────────────────── */
+    html, body {
+        width: 100%;
+        height: 100%;
+    }
+
+    /* ── الجدول يمتد للعرض الكامل ───────────────────── */
+    table {
+        width: 100% !important;
+        table-layout: fixed !important;
+        font-size: 8pt !important;
     }
     th, td {
         border-color: #000 !important;
+        padding: 2px 3px !important;
     }
+
+    /* ── ألوان الطباعة ───────────────────────────────── */
     * {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
         color-adjust: exact !important;
     }
-    @page {
-        size: A4 landscape;
-        margin: 8mm;
-    }
 }
 """
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # حساب أوزان الأعمدة النسبية من ws.column_dimensions
+    # يُعيد قاموساً {col_index: weight_percent}
+    # ─────────────────────────────────────────────────────────────────────────
+    def _col_weights(ws):
+        raw = {}
+        for letter, cd in ws.column_dimensions.items():
+            try:
+                idx = column_index_from_string(letter)
+                if not cd.hidden:
+                    raw[idx] = float(cd.width or 8)
+            except Exception:
+                pass
+        total = sum(raw.values()) or 1
+        return {idx: w / total * 100 for idx, w in raw.items()}
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # تحويل ورقة عمل → HTML جدول
+    # table-layout:fixed + colgroup بنسب مئوية → autofit كامل بلا scroll
+    # ─────────────────────────────────────────────────────────────────────────
     def parse_table_from_ws(ws):
-        """تحويل ورقة العمل إلى HTML"""
         if ws.max_row == 0:
             return ""
-        
-        # جمع معلومات الدمج
+
+        # ── خلايا مدمجة ──────────────────────────────────────
         merged = {}
-        skip = set()
+        skip   = set()
         for m in ws.merged_cells.ranges:
-            merged[(m.min_row, m.min_col)] = (m.max_row - m.min_row + 1, m.max_col - m.min_col + 1)
+            merged[(m.min_row, m.min_col)] = (
+                m.max_row - m.min_row + 1,
+                m.max_col - m.min_col + 1,
+            )
             for r2 in range(m.min_row, m.max_row + 1):
                 for c2 in range(m.min_col, m.max_col + 1):
                     if (r2, c2) != (m.min_row, m.min_col):
                         skip.add((r2, c2))
-        
-        # حساب عرض الأعمدة
-        col_widths = {}
-        for col_letter, cd in ws.column_dimensions.items():
-            try:
-                idx = column_index_from_string(col_letter)
-                col_widths[idx] = max(int((cd.width or 10) * 6), 40) if not cd.hidden else 0
-            except:
-                pass
-        
-        # بناء الجدول
-        html = '<div style="overflow-x: auto;"><table style="table-layout: auto;">'
-        html += '<colgroup>'
+
         max_col = ws.max_column
+        weights = _col_weights(ws)
+
+        # ── رأس الجدول بالأوزان النسبية (%) ─────────────────
+        html  = '<div style="width:100%;overflow:hidden;">'
+        html += '<table>'
+        html += '<colgroup>'
         for c in range(1, max_col + 1):
-            w = col_widths.get(c, 80)
-            if w > 0:
-                html += f'<col style="min-width:{w}px; max-width:{min(w, 200)}px;">'
+            pct = weights.get(c, 100 / max_col)
+            html += f'<col style="width:{pct:.2f}%;">'
         html += '</colgroup>'
-        
+
+        # ── صفوف البيانات ─────────────────────────────────────
         for r in range(1, ws.max_row + 1):
+            # تخطي الصفوف المدمجة كاملاً
             if all((r, c) in skip for c in range(1, max_col + 1)):
                 continue
-            
-            row_height = ws.row_dimensions[r].height if r in ws.row_dimensions else None
-            height_style = f'style="height:{max(int(row_height * 0.9), 18)}px;"' if row_height else ''
-            html += f'<tr {height_style}>'
-            
+
+            html += '<tr>'
             for c in range(1, max_col + 1):
-                if col_widths.get(c, 0) == 0:
-                    continue
                 if (r, c) in skip:
                     continue
-                
-                cell = ws.cell(r, c)
-                val = cell.value
-                text = "" if val is None else str(val).replace("\n", "<br>")
-                
+
+                cell  = ws.cell(r, c)
+                val   = cell.value
+                text  = "" if val is None else str(val).replace("\n", "<br>")
                 style = ""
-                
-                # تنسيق الخلفية
+
+                # خلفية
                 p = cell.fill
                 if p and p.fill_type == "solid":
                     bg = _rgb_to_hex(p.fgColor)
                     if bg and bg.lower() not in ("#000000", "#ffffff", ""):
                         style += f"background:{bg};"
-                
-                # تنسيق النص
+
+                # نص: bold + color فقط — حجم الخط يرثه من table
                 f_obj = cell.font
                 if f_obj:
                     if f_obj.bold:
                         style += "font-weight:bold;"
-                    sz = f_obj.size
-                    if sz:
-                        style += f"font-size:{min(sz, 10)}pt;"
                     fc = _rgb_to_hex(f_obj.color)
-                    if fc and fc != "#000000":
+                    if fc and fc not in ("#000000", ""):
                         style += f"color:{fc};"
-                
+
                 # محاذاة
                 a = cell.alignment
                 if a:
-                    ha = "center"
-                    if a.horizontal == "right":
-                        ha = "right"
-                    elif a.horizontal == "left":
-                        ha = "left"
-                    style += f"text-align:{ha};"
-                    va = "middle"
-                    if a.vertical == "top":
-                        va = "top"
-                    elif a.vertical == "bottom":
-                        va = "bottom"
-                    style += f"vertical-align:{va};"
-                    if a.wrapText:
-                        style += "white-space:normal;word-break:break-word;"
-                
-                style += "padding:3px 5px;"
-                
-                # معالجة الدمج
+                    ha = ("right"  if a.horizontal == "right"
+                          else "left" if a.horizontal == "left"
+                          else "center")
+                    va = ("top"    if a.vertical == "top"
+                          else "bottom" if a.vertical == "bottom"
+                          else "middle")
+                    style += f"text-align:{ha};vertical-align:{va};"
+
+                style += "padding:2px 4px;"
+
+                # دمج
                 span = ""
                 if (r, c) in merged:
                     rs2, cs2 = merged[(r, c)]
-                    if rs2 > 1:
-                        span += f' rowspan="{rs2}"'
-                    if cs2 > 1:
-                        span += f' colspan="{cs2}"'
-                
+                    if rs2 > 1: span += f' rowspan="{rs2}"'
+                    if cs2 > 1: span += f' colspan="{cs2}"'
+
                 html += f'<td style="{style}"{span}>{text}</td>'
-            
-            html += '<tr>'
-        
+            html += '</tr>'
+
         html += '</table></div>'
         return html
-    
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # تجميع HTML النهائي
+    # ─────────────────────────────────────────────────────────────────────────
     parts = [
         "<!DOCTYPE html>",
         '<html dir="rtl" lang="ar">',
         "<head>",
         '<meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width,initial-scale=1">',
         f"<title>{title}</title>",
         f"<style>{CSS}</style>",
         "</head><body>",
@@ -1102,73 +1016,86 @@ td:first-child {
         f'<button onclick="window.print()">🖨️ {title} — طباعة</button>',
         "</div>",
     ]
-    
+
+    first_page = True
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
         if ws.max_row == 0:
             continue
-        
-        # إنشاء ترويسة HTML من البيانات الأولى في الورقة
-        logo_tag = ""
+
         header_text = _company_header()
-        
-        # محاولة استخراج اسم الموظف من الورقة
+
+        # ── استخراج اسم الموظف ───────────────────────────────
         emp_name_display = sheet_name
         try:
             for r in range(2, min(ws.max_row, 10)):
                 if ws.cell(r, 1).value == "اسم الموظف" and ws.cell(r, 2).value:
                     emp_name_display = str(ws.cell(r, 2).value)
                     break
-        except:
+        except Exception:
             pass
-        
-        parts.append(f'<div class="page">')
-        
-        # الترويسة مع الشعار
+
+        # page-break-before على الصفحة الثانية فأكثر يُضافه CSS تلقائياً
+        parts.append('<div class="page-wrapper">')
+
+        # ── الترويسة ──────────────────────────────────────────
         if _logo_b64:
-            parts.append(f'''
-            <div class="logo-header">
-                <span>{header_text}</span>
-                <img src="data:image/png;base64,{_logo_b64}" alt="شعار الشركة">
-            </div>
-            ''')
+            parts.append(
+                f'<div class="logo-header">'
+                f'<span>{header_text}</span>'
+                f'<img src="data:image/png;base64,{_logo_b64}" alt="شعار">'
+                f'</div>'
+            )
         else:
-            parts.append(f'<div class="logo-header"><span>{header_text}</span></div>')
-        
-        # معلومات الموظف (محاولة استخراجها من الصفوف الأولى)
-        parts.append('<div class="info-grid">')
+            parts.append(
+                f'<div class="logo-header"><span>{header_text}</span></div>'
+            )
+
+        # ── معلومات الموظف (صفوف 2-8) ────────────────────────
+        info_rows = []
         try:
             for r in range(2, 9):
-                label = ws.cell(r, 1).value
-                value = ws.cell(r, 2).value
-                if label and value and str(label).strip() not in ("", "نتيجة التقييم السنوي"):
-                    parts.append(f'''
-                    <div class="info-row">
-                        <span class="info-label">{label}:</span>
-                        <span class="info-value">{value}</span>
-                    </div>
-                    ''')
-        except:
+                lbl = ws.cell(r, 1).value
+                val = ws.cell(r, 2).value
+                if (lbl and val
+                        and str(lbl).strip()
+                        not in ("", "نتيجة التقييم السنوي")):
+                    info_rows.append((str(lbl).strip(), str(val).strip()))
+        except Exception:
             pass
-        parts.append('</div>')
-        
-        # النتيجة السنوية
+
+        if info_rows:
+            parts.append('<div class="info-grid">')
+            for lbl, val in info_rows:
+                parts.append(
+                    f'<div class="info-row">'
+                    f'<span class="info-label">{lbl}:</span>'
+                    f'<span class="info-value">{val}</span>'
+                    f'</div>'
+                )
+            parts.append('</div>')
+
+        # ── النتيجة السنوية ───────────────────────────────────
         try:
-            annual_cell = None
-            for r in range(9, 12):
+            for r in range(9, 13):
                 if ws.cell(r, 1).value == "نتيجة التقييم السنوي":
                     annual_val = ws.cell(r, 3).value or ws.cell(r, 4).value
                     if annual_val:
-                        parts.append(f'<div class="annual-result"><small>النتيجة النهائية السنوية</small><br>{annual_val}</div>')
-                        break
-        except:
+                        parts.append(
+                            f'<div class="annual-result">'
+                            f'<small>النتيجة النهائية السنوية</small>'
+                            f'<br>{annual_val}</div>'
+                        )
+                    break
+        except Exception:
             pass
-        
-        # الجدول الرئيسي
-        table_html = parse_table_from_ws(ws)
-        parts.append(table_html)
-        
-        parts.append('</div>')  # closing page
-    
+
+        # ── الجدول الرئيسي ────────────────────────────────────
+        parts.append(parse_table_from_ws(ws))
+
+        parts.append('</div>')   # .page-wrapper
+        first_page = False
+
     parts.append("</body></html>")
     return "".join(parts)
+
