@@ -131,15 +131,19 @@ def render_department_report(df_emp, df_kpi, df_data):
         active3 = [s for s in s_list if s > 0]
         avg3 = sum(active3) / len(active3) if active3 else 0.0
         
-        # جلب بيانات الالتزام بالدوام للموظف
+        # جلب بيانات الالتزام بالدوام للموظف (لكل شهر على حدة)
+        attendance_monthly = {}
         attendance_count = 0
         attendance_hours = 0.0
         if ATTENDANCE_AVAILABLE:
             try:
                 for month_num in range(1, 13):
                     att_summary = get_employee_attendance_summary(emp, emp_id, sel3_year, month_num)
-                    attendance_count += att_summary["count"]
-                    attendance_hours += att_summary["hours"]
+                    att_count = att_summary.get("count", 0) or 0
+                    att_hrs = att_summary.get("hours", 0) or 0.0
+                    attendance_monthly[month_num] = {"count": att_count, "hours": att_hrs}
+                    attendance_count += att_count
+                    attendance_hours += att_hrs
             except:
                 pass
         
@@ -151,7 +155,8 @@ def render_department_report(df_emp, df_kpi, df_data):
             "verb": verbal_grade(avg3 * 100) if active3 else "—",
             "emp_id": emp_id,
             "attendance_count": attendance_count,
-            "attendance_hours": attendance_hours
+            "attendance_hours": attendance_hours,
+            "attendance_monthly": attendance_monthly  # إضافة البيانات الشهرية
         })
     summary3.sort(key=lambda x: x["pct"], reverse=True)
 
@@ -193,16 +198,27 @@ def render_department_report(df_emp, df_kpi, df_data):
         if not emp_notes and not emp_train:
             emp_notes, emp_train = get_emp_notes(s["emp"])
         
-        # تحضير بيانات الالتزام بالدوام للتصدير
+        # تحضير بيانات الالتزام بالدوام للتصدير (لكل شهر)
         attendance_export = None
         if s["attendance_count"] > 0 or s["attendance_hours"] > 0:
-            attendance_export = pd.DataFrame([{
-                "employee_name": s["emp"],
-                "employee_id": s["emp_id"],
-                "year": sel3_year,
-                "late_count": s["attendance_count"],
-                "total_late_hours": s["attendance_hours"]
-            }])
+            monthly_list = []
+            for month_num, att_data in s.get("attendance_monthly", {}).items():
+                if att_data["count"] > 0 or att_data["hours"] > 0:
+                    monthly_list.append({
+                        "month": month_num,
+                        "late_count": att_data["count"],
+                        "late_hours": att_data["hours"]
+                    })
+            if monthly_list:
+                attendance_export = pd.DataFrame(monthly_list)
+            else:
+                attendance_export = pd.DataFrame([{
+                    "employee_name": s["emp"],
+                    "employee_id": s["emp_id"],
+                    "year": sel3_year,
+                    "late_count": s["attendance_count"],
+                    "total_late_hours": s["attendance_hours"]
+                }])
         
         build_employee_sheet(
             wb3, s["emp"], job3, d3, m3, sel3_year,
